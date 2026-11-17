@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Bluetooth verso adattatore OBD. Nessun permesso di scrittura verso l'auto. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <!-- Android Auto -->
+    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <uses-feature
+        android:name="android.hardware.type.automotive"
+        android:required="false" />
+
+    <application
+        android:label="Megane"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.Megane">
+
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+
+        <!-- Questo e cio che fa comparire l'app sullo schermo R-Link2 -->
+        <service
+            android:name=".MeganeCarAppService"
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.IOT" />
+            </intent-filter>
+        </service>
+
+        <!-- Lettura dati in background: senza questa voce il polling non parte -->
+        <service
+            android:name=".PollingService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!-- Schermata sul telefono: scelta adattatore, log, catalogo completo -->
+        <activity
+            android:name=".TelefonoActivity"
+            android:exported="true"
+            android:label="Megane">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Storico tensione 12V con mini-grafico -->
+        <activity
+            android:name=".StoricoTensioneActivity"
+            android:exported="false"
+            android:label="Tensione 12V" />
+
+    </application>
+</manifest>

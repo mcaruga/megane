@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Gestionale rilasci</title>
+<style>
+  :root {
+    --bg: #0e1116; --card: #171c24; --fg: #e6edf3; --muted: #9aa7b4;
+    --accent: #2f81f7; --ok: #2ea043; --warn: #d29922; --border: #273040;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f8fa; --card: #ffffff; --fg: #1f2328; --muted: #57606a;
+      --accent: #0969da; --ok: #1a7f37; --warn: #9a6700; --border: #d0d7de;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --card: #171c24; --fg: #e6edf3; --muted: #9aa7b4;
+    --accent: #2f81f7; --ok: #2ea043; --warn: #d29922; --border: #273040;
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f8fa; --card: #ffffff; --fg: #1f2328; --muted: #57606a;
+    --accent: #0969da; --ok: #1a7f37; --warn: #9a6700; --border: #d0d7de;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px; margin: 16px 0;
+  }
+  .card h2 { margin: 0 0 10px; font-size: 1.1rem; }
+  .card p { margin: 6px 0; color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  a { color: var(--accent); }
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+  }
+  code { background: rgba(127,127,127,.15); padding: 2px 6px; border-radius: 5px; }
+  pre {
+    background: rgba(127,127,127,.12); padding: 12px 14px; border-radius: 9px;
+    overflow-x: auto; margin: 10px 0;
+  }
+  .note {
+    border-left: 3px solid var(--warn); padding: 8px 14px; margin: 12px 0;
+    background: rgba(210,153,34,.08); border-radius: 0 8px 8px 0; color: var(--muted);
+  }
+  .tag { color: var(--ok); font-weight: 600; }
+  .right { float: right; }
+  .btn {
+    background: transparent; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 9px; padding: 6px 12px; cursor: pointer; font: inherit;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <button class="btn right" id="tema" aria-label="Cambia tema">◐</button>
+  <h1>Gestionale rilasci</h1>
+  <p class="sub">Megane Diag &middot; <a href="../">torna al sito</a></p>
+
+  <div class="card">
+    <h2>Versioni pubblicate</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Versione</th><th>Data</th><th>Note</th><th>Download</th><th>SHA-256 (APK)</th></tr>
+        </thead>
+        <tbody id="righe"></tbody>
+      </table>
+    </div>
+    <p id="vuoto" hidden>Nessuna versione ancora. Lancia <code>docker/rilascia.sh</code> (vedi sotto).</p>
+  </div>
+
+  <div class="card">
+    <h2>Pubblicare una nuova versione</h2>
+    <p>Sul server, nella cartella del progetto:</p>
+<pre><code>docker/rilascia.sh 1.1.0 "Cosa cambia"</code></pre>
+    <p>Compila APK e JAR, li archivia, aggiorna "ultima versione" e questa tabella.
+       Nessun riavvio del sito. Il numero deve essere nuovo (formato X.Y.Z).</p>
+    <div class="note">
+      La chiave di firma sta in <code>docker/keystore/</code>. Fai un backup:
+      se la perdi, chi ha l'app installata deve disinstallarla prima di aggiornare.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Password di questo gestionale</h2>
+    <p>Per cambiarla, sul server:</p>
+<pre><code>docker/cambia-password.sh</code></pre>
+    <p>Utente <code>admin</code>. Vale per questa pagina e per l'archivio delle versioni precedenti;
+       l'ultima versione resta scaricabile da tutti.</p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var tbody = document.getElementById('righe');
+    var vuoto = document.getElementById('vuoto');
+
+    function cella(tr, testo) {
+      var td = document.createElement('td');
+      td.textContent = testo;
+      tr.appendChild(td);
+      return td;
+    }
+    function link(td, testo, href) {
+      if (td.childNodes.length) td.appendChild(document.createTextNode(' · '));
+      var a = document.createElement('a');
+      a.textContent = testo;
+      a.href = href;
+      td.appendChild(a);
+    }
+
+    fetch('../downloads/versions.txt', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (t) {
+        var righe = t.split('\n').filter(function (l) { return l.trim(); }).reverse();
+        if (!righe.length) { vuoto.hidden = false; return; }
+        righe.forEach(function (l, i) {
+          var p = l.split('|');
+          var v = p[0];
+          var tr = document.createElement('tr');
+          var tdV = cella(tr, v);
+          if (i === 0) {
+            var tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.textContent = ' attuale';
+            tdV.appendChild(tag);
+          }
+          cella(tr, p[1] || '');
+          cella(tr, p[2] || '');
+          var tdD = cella(tr, '');
+          var base = '../downloads/archivio/' + v + '/';
+          link(tdD, 'APK', base + 'megane-diag-' + v + '.apk');
+          link(tdD, 'JAR', base + 'megane-desktop-' + v + '.jar');
+          var sha = cella(tr, (p[3] || '').slice(0, 12));
+          sha.title = p[3] || '';
+          sha.style.fontFamily = 'ui-monospace, Menlo, monospace';
+          tbody.appendChild(tr);
+        });
+      })
+      .catch(function () { vuoto.hidden = false; });
+
+    var b = document.getElementById('tema'), root = document.documentElement;
+    try { var s = localStorage.getItem('tema'); if (s) root.setAttribute('data-theme', s); } catch (e) {}
+    b.addEventListener('click', function () {
+      var cur = root.getAttribute('data-theme');
+      var next = cur === 'light' ? 'dark' : 'light';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('tema', next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

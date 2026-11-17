@@ -1,0 +1,87 @@
+name: Release
+
+# Compila APK + JAR e li pubblica come GitHub Release.
+#  - Rilascio: git tag v1.2.0 && git push origin v1.2.0
+#  - Oppure a mano: scheda Actions -> Release -> Run workflow (inserisci la versione)
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versione (X.Y.Z)"
+        required: true
+
+permissions:
+  contents: write        # serve a creare la Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versione
+        id: v
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          VER="${RAW#v}"
+          [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Versione non valida: $VER"; exit 1; }
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: SDK Android
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Test della logica (core)
+        run: ./gradlew :core:test
+
+      # Chiave di firma STABILE dai Secrets: senza, ogni build firma diverso
+      # e Android rifiuta l'aggiornamento sopra la versione installata.
+      - name: Chiave di firma
+        id: ks
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
+            echo "path=$RUNNER_TEMP/release.p12" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Secret KEYSTORE_B64 assente: APK firmato con chiave di debug temporanea (non aggiornabile sopra una versione precedente)."
+          fi
+
+      - name: Compila APK e JAR
+        env:
+          KS_PASS: ${{ secrets.KEYSTORE_PASS }}
+        run: |
+          EXTRA=""
+          if [ -n "${{ steps.ks.outputs.path }}" ]; then
+            EXTRA="-PksPath=${{ steps.ks.outputs.path }} -PksPass=$KS_PASS"
+          fi
+          ./gradlew -PappVersion=${{ steps.v.outputs.ver }} $EXTRA :android:assembleDebug :desktop:fatJar
+
+      - name: Prepara i file
+        run: |
+          VER=${{ steps.v.outputs.ver }}
+          mkdir -p out
+          cp android/build/outputs/apk/debug/android-debug.apk "out/megane-diag-$VER.apk"
+          cp desktop/build/libs/megane-desktop.jar "out/megane-desktop-$VER.jar"
+          (cd out && sha256sum * > SHA256SUMS.txt)
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.ver }}
+          name: Megane Diag ${{ steps.v.outputs.ver }}
+          generate_release_notes: true
+          files: out/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: megane-diag-${{ steps.v.outputs.ver }}
+          path: out/*

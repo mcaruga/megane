@@ -1,0 +1,9 @@
+.git
+.gradle
+**/build
+*.iml
+.idea
+megane-desktop.jar
+docker/web/downloads
+docker/releases
+docker/htpasswd

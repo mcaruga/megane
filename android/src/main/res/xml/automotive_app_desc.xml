@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<automotiveApp>
+    <!-- categoria IOT: app non di navigazione ne media. E quella corretta
+         per una dashboard di dati veicolo proiettata su R-Link2. -->
+    <uses name="template" />
+</automotiveApp>

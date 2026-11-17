@@ -1,0 +1,16 @@
+services:
+  megane-web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: web          # solo nginx: APK e JAR li compila docker/rilascia.sh
+    image: megane-diag:latest
+    container_name: megane-diag
+    restart: unless-stopped
+    ports:
+      - "8080:80"          # dietro al reverse proxy / HTTPS su meganegt.omniking.cc
+    volumes:
+      # versioni compilate: scritte da docker/rilascia.sh, nessun rebuild per pubblicare
+      - ./releases:/usr/share/nginx/html/downloads:ro
+      # password gestionale (utente admin): cambiala con docker/cambia-password.sh
+      - ./htpasswd:/etc/nginx/htpasswd:ro

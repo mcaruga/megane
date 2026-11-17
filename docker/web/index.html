@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Megane Diag</title>
+<style>
+  :root {
+    --bg: #0e1116; --card: #171c24; --fg: #e6edf3; --muted: #9aa7b4;
+    --accent: #2f81f7; --ok: #2ea043; --warn: #d29922; --border: #273040;
+  }
+  :root:not([data-theme="light"]) {}
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f8fa; --card: #ffffff; --fg: #1f2328; --muted: #57606a;
+      --accent: #0969da; --ok: #1a7f37; --warn: #9a6700; --border: #d0d7de;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --card: #171c24; --fg: #e6edf3; --muted: #9aa7b4;
+    --accent: #2f81f7; --ok: #2ea043; --warn: #d29922; --border: #273040;
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f8fa; --card: #ffffff; --fg: #1f2328; --muted: #57606a;
+    --accent: #0969da; --ok: #1a7f37; --warn: #9a6700; --border: #d0d7de;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 10px; flex: 0 0 auto;
+    background: linear-gradient(135deg, var(--accent), #8957e5);
+    display: grid; place-items: center; font-weight: 700; color: #fff;
+  }
+  h1 { font-size: 1.6rem; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 28px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px; margin: 16px 0;
+  }
+  .card h2 { margin: 0 0 6px; font-size: 1.15rem; }
+  .card p { margin: 6px 0 16px; color: var(--muted); }
+  .btn {
+    display: inline-block; background: var(--accent); color: #fff;
+    text-decoration: none; padding: 11px 20px; border-radius: 9px;
+    font-weight: 600; border: none; cursor: pointer;
+  }
+  .btn.sec { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .badge {
+    font-size: .8rem; padding: 2px 9px; border-radius: 20px;
+    border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.ok { color: var(--ok); border-color: var(--ok); }
+  .badge.warn { color: var(--warn); border-color: var(--warn); }
+  code {
+    background: rgba(127,127,127,.15); padding: 2px 6px; border-radius: 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
+  }
+  ol { padding-left: 20px; } ol li { margin: 6px 0; }
+  .note {
+    border-left: 3px solid var(--warn); padding: 8px 14px; margin: 14px 0;
+    background: rgba(210,153,34,.08); border-radius: 0 8px 8px 0; color: var(--muted);
+  }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 40px; text-align: center; }
+  .theme { position: fixed; top: 14px; right: 14px; }
+</style>
+</head>
+<body>
+<button class="btn sec theme" id="tema" aria-label="Cambia tema">◐</button>
+<div class="wrap">
+
+  <header>
+    <div class="logo">M</div>
+    <div>
+      <h1>Megane Diag</h1>
+      <div class="sub">Diagnostica in sola lettura per Renault Megane IV &middot; R-Link2</div>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>Android <span class="badge ok">APK</span> <span class="badge" id="ver"></span></h2>
+    <p>App per lo schermo R-Link2 via Android Auto. Dati live, codici guasto in italiano,
+       correlatore CAN. Richiede un telefono Android.</p>
+    <div class="row">
+      <a class="btn" href="downloads/megane-diag.apk">Scarica APK</a>
+      <a class="btn sec" href="INSTALLA.md">Istruzioni</a>
+    </div>
+    <div class="note">
+      Installazione fuori dal Play Store: attiva "origini sconosciute" in Android Auto
+      (Impostazioni &rarr; tocca 10 volte "Versione" &rarr; menu sviluppatore).
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>macOS / Linux / Windows <span class="badge ok">JAR</span></h2>
+    <p>App desktop con grafico tensione e correlatore. Richiede Java 17 o superiore.</p>
+    <div class="row">
+      <a class="btn" href="downloads/megane-desktop.jar">Scarica JAR</a>
+    </div>
+    <p style="margin-top:14px">Avvio: <code>java -jar megane-desktop.jar</code></p>
+  </div>
+
+  <div class="card">
+    <h2>Hardware necessario <span class="badge warn">OBD2</span></h2>
+    <p>Un adattatore OBD2 Bluetooth per leggere l'auto.</p>
+    <ol>
+      <li><strong>vLinker MC+ Bluetooth</strong> (~45 &euro;) &mdash; consigliato, NON la versione WiFi.</li>
+      <li>Per il logger CAN avanzato: interfaccia SLCAN (canalyze / CANable) via USB.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Cosa fa e cosa non fa</h2>
+    <p>Legge soltanto. Non scrive sulle centraline, non invia frame sul bus,
+       non modifica il firmware R-Link2. Nessuna funzione che alteri la
+       calibrazione del veicolo o le emissioni.</p>
+  </div>
+
+  <footer>meganegt.omniking.cc &middot; uso personale &middot; sola lettura &middot;
+    <a href="rilasci/" style="color:inherit">rilasci</a></footer>
+</div>
+
+<script>
+  // versione attuale: riga piu recente di downloads/versions.txt (scritta da rilascia.sh)
+  fetch('downloads/versions.txt', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.text() : ''; })
+    .then(function (t) {
+      var righe = t.split('\n').filter(function (l) { return l.trim(); });
+      if (!righe.length) return;
+      var el = document.getElementById('ver');
+      if (el) el.textContent = 'v' + righe[righe.length - 1].split('|')[0];
+    })
+    .catch(function () {});
+  // tema persistente per visitatore (non critico, solo comodita)
+  (function () {
+    var b = document.getElementById('tema'), root = document.documentElement;
+    try {
+      var s = localStorage.getItem('tema');
+      if (s) root.setAttribute('data-theme', s);
+    } catch (e) {}
+    b.addEventListener('click', function () {
+      var cur = root.getAttribute('data-theme');
+      var next = cur === 'light' ? 'dark' : 'light';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('tema', next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

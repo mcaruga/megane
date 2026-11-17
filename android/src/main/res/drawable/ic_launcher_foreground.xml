@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Contagiri stilizzato: anello + lancetta. Dentro la safe zone 66x66 dell'icona adattiva. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,30A24,24 0 1,0 54,78A24,24 0 1,0 54,30M54,35A19,19 0 1,1 54,73A19,19 0 1,1 54,35" />
+    <path android:fillColor="#FFB300"
+        android:pathData="M52,56L66,40L58,60Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,52A4,4 0 1,0 54,60A4,4 0 1,0 54,52" />
+</vector>
