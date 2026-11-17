@@ -1,52 +1,48 @@
-# Deploy su server Linux (meganegt.omniking.cc)
+# Server di build e rilascio (megane.omniking.cc)
 
-Sito di download + gestionale rilasci con password. APK e JAR si compilano
-SUL TUO SERVER (serve l'accesso a dl.google.com, bloccato in cloud).
+Tutto gira sul server di casa (192.168.1.11). Build di APK + JAR **qui**,
+pubblicazione **solo dopo la tua approvazione** dal gestionale con password.
 
-## Installare tutto (un comando)
-Copia il progetto sul server, poi:
-```bash
-cd megane-diag
-docker/setup-server.sh
+## Come funziona
 ```
-Fa: installa Docker se manca, avvia il sito, compila e pubblica la 1.0.0.
-Prima compilazione 5-15 min (scarica l'SDK Android).
-Sito: `http://IP-SERVER:8080` - gestionale: `http://IP-SERVER:8080/rilasci/`
-
-## Gestionale rilasci (password)
-- Utente `admin`. Protegge `/rilasci/` e l'archivio `/downloads/archivio/`.
-- L'ultima versione resta scaricabile da tutti.
-- Cambiare password (attiva subito, nessun riavvio):
-```bash
-docker/cambia-password.sh
+git tag v1.0.1 && git push origin v1.0.1      (oppure: pulsante "Avvia build" nel gestionale)
+        |
+docker/watcher.sh (cron, ogni minuto): git fetch -> build -> CANDIDATO (privato)
+        |
+https://megane.omniking.cc/rilasci/  -> scarichi, provi, "Approva"  -> pubblico per tutti
 ```
-- Anti brute-force: 10 tentativi/minuto per IP.
+- Il watcher tiene aggiornata anche la copia server (`git merge --ff-only`, mai sovrascrive
+  modifiche locali) e, se cambia `docker/`, ricostruisce il sito.
+- Build fallita: il log compare nel gestionale. Lo stesso tag non viene ritentato da solo;
+  rilancialo dal pulsante "Avvia build".
 
-## Pubblicare una nuova versione
+## Installare (una volta)
 ```bash
-docker/rilascia.sh 1.1.0 "Cosa cambia"
+cd ~/megane && docker/setup-server.sh
 ```
-Compila APK + JAR, li archivia in `docker/releases/archivio/1.1.0/`, aggiorna
-"ultima versione" e l'elenco. Nessun riavvio del sito.
-Il numero deve essere nuovo (X.Y.Z). Le build successive alla prima sono veloci (cache).
+Crea chiave di firma (se manca), avvia sito + API, mette il watcher in cron.
+
+Cloudflare Zero Trust -> Tunnels -> tunnel omniking -> Public Hostname:
+`megane.omniking.cc` -> `http://localhost:8484`.
+
+## Comandi utili
+| Cosa | Comando |
+|---|---|
+| Build subito, da terminale | `docker/rilascia.sh 1.1.0 "Cosa cambia"` |
+| Cambiare password gestionale | `docker/cambia-password.sh` |
+| Log watcher | `tail -f docker/stato/watcher.log` |
+| Log sito | `docker compose -f docker/docker-compose.yml logs` |
+
+## Repo privato
+Il server legge GitHub con una deploy key (`~/.ssh/megane_deploy`, host `github-megane`).
+Remote: `git@github-megane:mcaruga/megane.git`.
 
 ## Chiave di firma - FAI UN BACKUP
-`docker/keystore/` (creata alla prima release) firma l'APK. Se la perdi, chi ha
-l'app installata deve disinstallarla prima di aggiornare. Copiala altrove.
+`docker/keystore/` (mai nel repo, mai nelle immagini Docker: passa come BuildKit secret).
+Se la perdi, chi ha l'app installata deve disinstallarla per aggiornare.
+Gli stessi valori vanno nei Secrets GitHub (`KEYSTORE_B64`, `KEYSTORE_PASS`), cosi anche
+le build di GitHub Actions si installano sopra quelle del server.
 
-## HTTPS su meganegt.omniking.cc
-Il container parla HTTP sulla 8080. Davanti serve un reverse proxy con
-certificato Let's Encrypt, e un record DNS `A` di `meganegt` verso l'IP pubblico.
-Esempio Caddy:
-```
-meganegt.omniking.cc {
-    reverse_proxy localhost:8080
-}
-```
-Su IP privato (192.168.x.x) niente HTTPS automatico: resti in HTTP in LAN.
-
-## Se la build fallisce
-- Il server vede Google?  `curl -I https://dl.google.com`
-- Dietro proxy: passa HTTP_PROXY/HTTPS_PROXY a `docker build`.
-- Log sito: `docker compose -f docker/docker-compose.yml logs`
-- "permission denied" su docker: `sudo usermod -aG docker $USER` e rientra in SSH.
+## Cartelle
+- `docker/releases/` pubblico: ultima versione, `archivio/` (con password), `versions.txt`
+- `docker/stato/` privato: `candidati/`, `coda/`, `log/`, `build.json`

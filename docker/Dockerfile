@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ==========================================================================
 # STAGE 1 - BUILDER: scarica Android SDK e compila APK + JAR desktop.
 # Gira sul TUO server, dove dl.google.com e raggiungibile (in cloud no).
@@ -34,13 +35,16 @@ RUN yes | sdkmanager --licenses >/dev/null && \
 WORKDIR /src
 COPY . .
 
-# compila APK debug e JAR desktop in un colpo solo
+# compila APK e JAR desktop in un colpo solo.
+# Chiave di firma via BuildKit secret: NON finisce in nessun layer dell'immagine.
 ARG APP_VERSION=0.1.0
-RUN chmod +x gradlew && \
+RUN --mount=type=secret,id=ks,required=false \
+    --mount=type=secret,id=kspass,required=false \
+    chmod +x gradlew && \
     EXTRA="" && \
-    if [ -f docker/keystore/release.p12 ]; then \
-      EXTRA="-PksPath=/src/docker/keystore/release.p12 -PksPass=$(cat docker/keystore/ks.pass)"; \
-    fi && \
+    if [ -s /run/secrets/ks ] && [ -s /run/secrets/kspass ]; then \
+      EXTRA="-PksPath=/run/secrets/ks -PksPass=$(cat /run/secrets/kspass)"; \
+    else echo "ATTENZIONE: nessuna chiave, firma di debug"; fi && \
     ./gradlew --no-daemon -PappVersion=${APP_VERSION} ${EXTRA} :android:assembleDebug :desktop:fatJar
 
 # ==========================================================================
@@ -56,3 +60,12 @@ COPY INSTALLA.md /usr/share/nginx/html/INSTALLA.md
 # APK e JAR li pubblica docker/rilascia.sh, non finiscono nell'immagine.
 
 EXPOSE 80
+
+# ==========================================================================
+# STAGE 3 - API gestionale: approva / rifiuta / chiede build. Solo stdlib.
+# ==========================================================================
+FROM python:3.12-alpine AS api
+COPY docker/api/server.py /app/server.py
+USER 1000:1000
+EXPOSE 8000
+CMD ["python", "-u", "/app/server.py"]

@@ -9,3 +9,4 @@ docker/htpasswd
 docker/releases/
 docker/keystore/
 .kotlin/
+docker/stato/

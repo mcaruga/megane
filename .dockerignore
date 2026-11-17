@@ -7,3 +7,5 @@ megane-desktop.jar
 docker/web/downloads
 docker/releases
 docker/htpasswd
+docker/keystore
+docker/stato

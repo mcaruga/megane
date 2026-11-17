@@ -61,6 +61,19 @@
     background: transparent; color: var(--fg); border: 1px solid var(--border);
     border-radius: 9px; padding: 6px 12px; cursor: pointer; font: inherit;
   }
+  .btn.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .btn.no { color: var(--warn); }
+  .btn:disabled { opacity: .5; cursor: wait; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .row label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); gap: 4px; }
+  input {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font: inherit; min-width: 0;
+  }
+  #msg { min-height: 1.4em; font-weight: 600; }
+  #msg.err { color: var(--warn); } #msg.ok { color: var(--ok); }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: .85em; }
+  pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -68,6 +81,34 @@
   <button class="btn right" id="tema" aria-label="Cambia tema">◐</button>
   <h1>Gestionale rilasci</h1>
   <p class="sub">Megane Diag &middot; <a href="../">torna al sito</a></p>
+
+  <p id="msg" role="status"></p>
+
+  <div class="card">
+    <h2>Da approvare</h2>
+    <p>Build pronte ma non ancora pubbliche. Scarica e prova, poi approva o scarta.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Versione</th><th>Da</th><th>Note</th><th>Prova</th><th></th></tr></thead>
+        <tbody id="cand"></tbody>
+      </table>
+    </div>
+    <p id="candVuoto" hidden>Nessun candidato.</p>
+  </div>
+
+  <div class="card">
+    <h2>Build</h2>
+    <p id="buildStato">&mdash;</p>
+    <pre class="log" id="log" hidden></pre>
+    <div class="row">
+      <label>Versione<input id="fVer" placeholder="1.0.1" size="8" inputmode="decimal"></label>
+      <label>Da (branch o tag)<input id="fRef" value="main" size="10"></label>
+      <label style="flex:1">Note<input id="fNote" placeholder="Cosa cambia"></label>
+      <button class="btn" id="fGo">Avvia build</button>
+    </div>
+    <p>Oppure in automatico: ogni tag <code>vX.Y.Z</code> pushato su GitHub viene compilato qui sul server
+       entro un minuto (<code>git tag v1.0.1 &amp;&amp; git push origin v1.0.1</code>).</p>
+  </div>
 
   <div class="card">
     <h2>Versioni pubblicate</h2>
@@ -79,17 +120,13 @@
         <tbody id="righe"></tbody>
       </table>
     </div>
-    <p id="vuoto" hidden>Nessuna versione ancora. Lancia <code>docker/rilascia.sh</code> (vedi sotto).</p>
+    <p id="vuoto" hidden>Nessuna versione ancora pubblicata.</p>
   </div>
 
   <div class="card">
-    <h2>Pubblicare una nuova versione</h2>
-    <p>Sul server, nella cartella del progetto:</p>
-<pre><code>docker/rilascia.sh 1.1.0 "Cosa cambia"</code></pre>
-    <p>Compila APK e JAR, li archivia, aggiorna "ultima versione" e questa tabella.
-       Nessun riavvio del sito. Il numero deve essere nuovo (formato X.Y.Z).</p>
+    <h2>Chiave di firma</h2>
     <div class="note">
-      La chiave di firma sta in <code>docker/keystore/</code>. Fai un backup:
+      La chiave sta in <code>docker/keystore/</code> sul server. Fai un backup:
       se la perdi, chi ha l'app installata deve disinstallarla prima di aggiornare.
     </div>
   </div>
@@ -105,58 +142,115 @@
 
 <script>
   (function () {
-    var tbody = document.getElementById('righe');
-    var vuoto = document.getElementById('vuoto');
+    var $ = function (id) { return document.getElementById(id); };
+    var timer = null;
 
-    function cella(tr, testo) {
-      var td = document.createElement('td');
-      td.textContent = testo;
-      tr.appendChild(td);
-      return td;
+    function el(tag, testo, cls) {
+      var e = document.createElement(tag);
+      if (testo != null) e.textContent = testo;
+      if (cls) e.className = cls;
+      return e;
     }
-    function link(td, testo, href) {
-      if (td.childNodes.length) td.appendChild(document.createTextNode(' · '));
-      var a = document.createElement('a');
-      a.textContent = testo;
-      a.href = href;
-      td.appendChild(a);
+    function td(tr, testo, cls) { var c = el('td', testo, cls); tr.appendChild(c); return c; }
+    function link(c, testo, href) {
+      if (c.childNodes.length) c.appendChild(document.createTextNode(' · '));
+      var a = el('a', testo); a.href = href; c.appendChild(a);
+    }
+    function msg(t, ok) { var m = $('msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; }
+
+    function post(azione, dati) {
+      return fetch('api/' + azione, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Megane': '1' },
+        body: JSON.stringify(dati)
+      }).then(function (r) {
+        return r.json().catch(function () { return { msg: 'Errore ' + r.status }; })
+          .then(function (j) { msg(j.msg, r.ok); carica(); return r.ok; });
+      }).catch(function () { msg('Server non raggiungibile', false); });
     }
 
-    fetch('../downloads/versions.txt', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.text() : ''; })
-      .then(function (t) {
-        var righe = t.split('\n').filter(function (l) { return l.trim(); }).reverse();
-        if (!righe.length) { vuoto.hidden = false; return; }
-        righe.forEach(function (l, i) {
-          var p = l.split('|');
-          var v = p[0];
-          var tr = document.createElement('tr');
-          var tdV = cella(tr, v);
-          if (i === 0) {
-            var tag = document.createElement('span');
-            tag.className = 'tag';
-            tag.textContent = ' attuale';
-            tdV.appendChild(tag);
-          }
-          cella(tr, p[1] || '');
-          cella(tr, p[2] || '');
-          var tdD = cella(tr, '');
-          var base = '../downloads/archivio/' + v + '/';
-          link(tdD, 'APK', base + 'megane-diag-' + v + '.apk');
-          link(tdD, 'JAR', base + 'megane-desktop-' + v + '.jar');
-          var sha = cella(tr, (p[3] || '').slice(0, 12));
-          sha.title = p[3] || '';
-          sha.style.fontFamily = 'ui-monospace, Menlo, monospace';
-          tbody.appendChild(tr);
-        });
-      })
-      .catch(function () { vuoto.hidden = false; });
+    function disegna(s) {
+      // candidati
+      var tb = $('cand'); tb.textContent = '';
+      $('candVuoto').hidden = s.candidati.length > 0;
+      s.candidati.forEach(function (c) {
+        var tr = el('tr');
+        td(tr, c.ver);
+        var da = td(tr, (c.ref || '') + ' '); da.appendChild(el('span', (c.commit || '').slice(0, 8), 'mono'));
+        da.title = (c.fonte || '') + ' · ' + (c.data || '');
+        td(tr, c.note || '');
+        var p = td(tr, '');
+        link(p, 'APK', 'candidati/' + c.ver + '/megane-diag-' + c.ver + '.apk');
+        link(p, 'JAR', 'candidati/' + c.ver + '/megane-desktop-' + c.ver + '.jar');
+        var az = td(tr, '');
+        az.style.whiteSpace = 'nowrap';
+        var ok = el('button', 'Approva', 'btn ok');
+        ok.onclick = function () {
+          if (!confirm('Pubblicare ' + c.ver + ' per tutti?')) return;
+          ok.disabled = true; post('approva', { ver: c.ver });
+        };
+        var no = el('button', 'Scarta', 'btn no');
+        no.onclick = function () {
+          if (!confirm('Scartare ' + c.ver + '? I file vengono cancellati.')) return;
+          no.disabled = true; post('rifiuta', { ver: c.ver });
+        };
+        az.appendChild(ok); az.appendChild(document.createTextNode(' ')); az.appendChild(no);
+        tb.appendChild(tr);
+      });
 
-    var b = document.getElementById('tema'), root = document.documentElement;
-    try { var s = localStorage.getItem('tema'); if (s) root.setAttribute('data-theme', s); } catch (e) {}
-    b.addEventListener('click', function () {
-      var cur = root.getAttribute('data-theme');
-      var next = cur === 'light' ? 'dark' : 'light';
+      // build
+      var b = s.build || {}, t;
+      var inCorso = b.stato === 'in_corso';
+      if (inCorso) t = 'In corso: ' + b.ver + ' da ' + b.ref + ' (dal ' + b.quando + ')';
+      else if (b.stato === 'ok') t = 'Ultima build: ' + b.ver + ' riuscita (' + b.quando + ')';
+      else if (b.stato === 'errore') t = 'Ultima build: ' + b.ver + ' FALLITA (' + b.quando + ') — log sotto';
+      else t = 'Nessuna build ancora.';
+      if (s.coda.length) t += ' · In coda: ' + s.coda.map(function (q) { return q.ver; }).join(', ');
+      $('buildStato').textContent = t;
+      $('log').hidden = !(inCorso || b.stato === 'errore') || !s.log;
+      $('log').textContent = s.log || '';
+      if (inCorso) $('log').scrollTop = $('log').scrollHeight;
+
+      // pubblicate
+      var tbody = $('righe'); tbody.textContent = '';
+      var righe = s.pubblicate.slice().reverse();
+      $('vuoto').hidden = righe.length > 0;
+      righe.forEach(function (p, i) {
+        var tr = el('tr');
+        var tdV = td(tr, p.ver);
+        if (i === 0) tdV.appendChild(el('span', ' attuale', 'tag'));
+        td(tr, p.data); td(tr, p.note);
+        var d = td(tr, '');
+        var base = '../downloads/archivio/' + p.ver + '/';
+        link(d, 'APK', base + 'megane-diag-' + p.ver + '.apk');
+        link(d, 'JAR', base + 'megane-desktop-' + p.ver + '.jar');
+        var sha = td(tr, (p.sha || '').slice(0, 12), 'mono'); sha.title = p.sha || '';
+        tbody.appendChild(tr);
+      });
+
+      clearTimeout(timer);
+      timer = setTimeout(carica, (inCorso || s.coda.length) ? 5000 : 30000);
+    }
+
+    function carica() {
+      fetch('api/stato', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw r; return r.json(); })
+        .then(disegna)
+        .catch(function () { msg('Impossibile leggere lo stato', false); clearTimeout(timer); timer = setTimeout(carica, 30000); });
+    }
+
+    $('fGo').onclick = function () {
+      var v = $('fVer').value.trim();
+      if (!/^\d+\.\d+\.\d+$/.test(v)) { msg('Versione nel formato X.Y.Z, es. 1.0.1', false); return; }
+      post('build', { ver: v, ref: $('fRef').value.trim() || 'main', note: $('fNote').value.trim() })
+        .then(function (ok) { if (ok) { $('fVer').value = ''; $('fNote').value = ''; } });
+    };
+
+    carica();
+
+    var bt = $('tema'), root = document.documentElement;
+    try { var st = localStorage.getItem('tema'); if (st) root.setAttribute('data-theme', st); } catch (e) {}
+    bt.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
       root.setAttribute('data-theme', next);
       try { localStorage.setItem('tema', next); } catch (e) {}
     });

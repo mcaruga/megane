@@ -3,14 +3,32 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-      target: web          # solo nginx: APK e JAR li compila docker/rilascia.sh
+      target: web          # solo nginx: APK e JAR li compila docker/build.sh
     image: megane-diag:latest
     container_name: megane-diag
     restart: unless-stopped
+    depends_on: [megane-api]
     ports:
-      - "8080:80"          # dietro al reverse proxy / HTTPS su meganegt.omniking.cc
+      - "8484:80"          # Cloudflare tunnel: megane.omniking.cc -> http://localhost:8484
     volumes:
-      # versioni compilate: scritte da docker/rilascia.sh, nessun rebuild per pubblicare
+      # pubblico: ultima versione + archivio + versions.txt
       - ./releases:/usr/share/nginx/html/downloads:ro
-      # password gestionale (utente admin): cambiala con docker/cambia-password.sh
+      # privato: candidati da approvare (serviti solo dietro password)
+      - ./stato/candidati:/srv/candidati:ro
+      # password gestionale (utente admin): docker/cambia-password.sh
       - ./htpasswd:/etc/nginx/htpasswd:ro
+
+  # API gestionale: approva/rifiuta/chiede build. Nessuna porta esposta, niente Docker socket.
+  megane-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: api
+    image: megane-api:latest
+    container_name: megane-api
+    restart: unless-stopped
+    read_only: true
+    user: "1000:1000"
+    volumes:
+      - ./releases:/releases
+      - ./stato:/stato
