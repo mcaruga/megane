@@ -6,6 +6,9 @@ Dati:
   /stato     -> docker/stato     (privato: candidati, coda build, log)
 Le build le fa docker/watcher.sh sull'host (questa API non tocca Docker).
 """
+import base64
+import crypt
+import hmac
 import json
 import os
 import re
@@ -17,6 +20,7 @@ REL = "/releases"
 ST = "/stato"
 CAND = os.path.join(ST, "candidati")
 CODA = os.path.join(ST, "coda")
+HTPASSWD = "/auth/htpasswd"
 VER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
 
@@ -137,6 +141,27 @@ def chiedi_build(ver, ref, note):
     return 200, f"Build {ver} in coda (parte entro 1 minuto)"
 
 
+def cambia_password(auth_header, vecchia, nuova):
+    # nginx ha gia verificato l'header Basic: confronto la vecchia con quella usata ora
+    try:
+        utente, _, attuale = base64.b64decode(auth_header.split(" ", 1)[1]).decode().partition(":")
+    except (IndexError, ValueError, UnicodeDecodeError):
+        return 401, "Credenziali mancanti"
+    if not hmac.compare_digest(vecchia.encode(), attuale.encode()):
+        return 403, "Password attuale sbagliata"
+    if len(nuova) < 10:
+        return 400, "Nuova password troppo corta (minimo 10 caratteri)"
+    if ":" in nuova or "\n" in nuova:
+        return 400, "Caratteri non ammessi"
+    riga = f"{utente}:{crypt.crypt(nuova, crypt.mksalt(crypt.METHOD_SHA512))}\n"
+    # scrittura sul posto: il file e un bind mount singolo, un rename non arriverebbe a nginx
+    with open(HTPASSWD, "r+", encoding="utf-8") as f:
+        f.seek(0)
+        f.write(riga)
+        f.truncate()
+    return 200, "Password cambiata. Il browser ti chiedera di nuovo l'accesso."
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "megane-api"
     sys_version = ""
@@ -164,6 +189,10 @@ class H(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
         except ValueError:
             return self._json(400, {"msg": "JSON non valido"})
+        if self.path == "/password":
+            code, msg = cambia_password(self.headers.get("Authorization", ""),
+                                        str(body.get("vecchia", "")), str(body.get("nuova", "")))
+            return self._json(code, {"msg": msg})
         ver = str(body.get("ver", ""))
         if not VER_RE.match(ver):
             return self._json(400, {"msg": "Versione non valida (X.Y.Z)"})

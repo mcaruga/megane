@@ -32,3 +32,4 @@ services:
     volumes:
       - ./releases:/releases
       - ./stato:/stato
+      - ./htpasswd:/auth/htpasswd     # rw: cambio password dal gestionale

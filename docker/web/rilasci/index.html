@@ -133,10 +133,15 @@
 
   <div class="card">
     <h2>Password di questo gestionale</h2>
-    <p>Per cambiarla, sul server:</p>
-<pre><code>docker/cambia-password.sh</code></pre>
     <p>Utente <code>admin</code>. Vale per questa pagina e per l'archivio delle versioni precedenti;
        l'ultima versione resta scaricabile da tutti.</p>
+    <div class="row">
+      <label>Password attuale<input type="password" id="pOld" autocomplete="current-password"></label>
+      <label>Nuova (min 10)<input type="password" id="pNew" autocomplete="new-password"></label>
+      <label>Ripeti<input type="password" id="pNew2" autocomplete="new-password"></label>
+      <button class="btn" id="pGo">Cambia password</button>
+    </div>
+    <p>Dal server: <code>docker/cambia-password.sh</code></p>
   </div>
 </div>
 
@@ -243,6 +248,16 @@
       if (!/^\d+\.\d+\.\d+$/.test(v)) { msg('Versione nel formato X.Y.Z, es. 1.0.1', false); return; }
       post('build', { ver: v, ref: $('fRef').value.trim() || 'main', note: $('fNote').value.trim() })
         .then(function (ok) { if (ok) { $('fVer').value = ''; $('fNote').value = ''; } });
+    };
+
+    $('pGo').onclick = function () {
+      var n = $('pNew').value;
+      if (n.length < 10) { msg('Nuova password troppo corta (minimo 10)', false); return; }
+      if (n !== $('pNew2').value) { msg('Le due password nuove non coincidono', false); return; }
+      post('password', { vecchia: $('pOld').value, nuova: n }).then(function (ok) {
+        $('pOld').value = $('pNew').value = $('pNew2').value = '';
+        if (ok) setTimeout(function () { location.reload(); }, 1500);
+      });
     };
 
     carica();
