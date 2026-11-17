@@ -8,3 +8,4 @@ captures/
 docker/htpasswd
 docker/releases/
 docker/keystore/
+.kotlin/
