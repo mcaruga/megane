@@ -5,8 +5,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
-    <!-- Android Auto -->
-    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />
+    <!-- Android Auto: niente MAP_TEMPLATES, usiamo solo Grid/List -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
@@ -34,7 +33,8 @@
             android:foregroundServiceType="connectedDevice">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
-                <category android:name="androidx.car.app.category.IOT" />
+                <!-- POI invece di IOT: con IOT Android Auto non mostrava l'app installata da APK -->
+                <category android:name="androidx.car.app.category.POI" />
             </intent-filter>
         </service>
 

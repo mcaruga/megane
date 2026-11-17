@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <automotiveApp>
-    <!-- categoria IOT: app non di navigazione ne media. E quella corretta
-         per una dashboard di dati veicolo proiettata su R-Link2. -->
+    <!-- categoria dichiarata nel manifest (POI). Solo template Grid/List. -->
     <uses name="template" />
 </automotiveApp>
