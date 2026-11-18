@@ -7,12 +7,26 @@
         android:usesPermissionFlags="neverForLocation" />
     <!-- Android Auto: niente MAP_TEMPLATES, usiamo solo Grid/List -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- aggiornamento automatico da megane.omniking.cc -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <uses-feature
         android:name="android.hardware.type.automotive"
         android:required="false" />
+
+    <!-- Android 11+: per la diagnosi, vedere Android Auto e le altre app per auto -->
+    <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+        <intent>
+            <action android:name="androidx.car.app.CarAppService" />
+        </intent>
+        <intent>
+            <action android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION" />
+        </intent>
+    </queries>
 
     <application
         android:label="Megane"
@@ -61,6 +75,11 @@
             android:name=".StoricoTensioneActivity"
             android:exported="false"
             android:label="Tensione 12V" />
+
+        <!-- esito dell'installazione dell'aggiornamento -->
+        <receiver
+            android:name=".Aggiornamenti$EsitoInstallazione"
+            android:exported="false" />
 
     </application>
 </manifest>

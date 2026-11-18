@@ -32,6 +32,7 @@ class PollingService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        Connessione.ctx = applicationContext
         val bt = getSystemService(BluetoothManager::class.java)
         trasporto = TrasportoBluetooth(bt?.adapter)
         // Android 14: senza permesso Bluetooth startForeground lancia eccezione e chiude l'app
@@ -41,6 +42,13 @@ class PollingService : LifecycleService() {
             stopSelf(); return
         }
         avviaLoop()
+        // controllo aggiornamenti: subito e poi ogni 30 minuti (poche centinaia di byte)
+        lifecycleScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                runCatching { Aggiornamenti.controlla(applicationContext) }
+                delay(30 * 60_000L)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -131,7 +139,7 @@ class PollingService : LifecycleService() {
         Connessione.imposta("Mi collego a $nome...")
         val r = trasporto.apri(device)
         val e = r.getOrElse {
-            Connessione.imposta("Errore con $nome: ${it.message}")
+            Connessione.imposta("Errore con $nome: ${it.javaClass.simpleName}: ${it.message}")
             return null
         }
         Connessione.versione = e.versione
@@ -202,8 +210,11 @@ object Connessione {
     @Volatile var collegato: Boolean = false; private set
     @Volatile var dispositivo: String? = null
     @Volatile var versione: String = ""
+    /** Per scrivere gli eventi nel registro di [Diagnosi]. */
+    @Volatile var ctx: Context? = null
 
     fun imposta(t: String, collegato: Boolean = false) {
+        if (t != testo) ctx?.let { runCatching { Diagnosi.evento(it, "BT: $t") } }
         testo = t; this.collegato = collegato
     }
 
