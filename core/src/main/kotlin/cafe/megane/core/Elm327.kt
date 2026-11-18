@@ -17,9 +17,12 @@ class Elm327(
     private val output: OutputStream,
     private val timeoutMs: Long = 2_000,
 ) {
-    /** Comandi AT ammessi. Whitelist: niente oltre questi. */
+    /** Versione riportata dall'adattatore dopo ATZ (es. "ELM327 v2.2"). */
+    @Volatile var versione: String = ""
+        private set
+
+    /** Comandi AT ammessi. Whitelist: niente oltre questi. ATZ va a parte (risposta lenta). */
     private val initSequence = listOf(
-        "ATZ",      // reset adattatore
         "ATE0",     // echo off
         "ATL0",     // linefeed off
         "ATS0",     // spazi off, meno byte da parsare
@@ -27,13 +30,27 @@ class Elm327(
         "ATSP0",    // autodetect protocollo
     )
 
+    /**
+     * Inizializza l'adattatore. Riesce se l'ELM327 risponde, anche a quadro spento:
+     * se la centralina risponde lo decide poi [EngineGate].
+     */
     fun connect(): Result<String> = runCatching {
+        val reset = send("ATZ", 5_000)
+        versione = reset.lines().map { it.trim() }
+            .lastOrNull { it.contains("ELM", ignoreCase = true) || it.contains("v", ignoreCase = true) }
+            ?: ""
         initSequence.forEach { send(it) }
-        send("0100").also {
-            require(!it.contains("UNABLE") && !it.contains("NO DATA")) {
-                "Adattatore collegato ma la centralina non risponde. Motore acceso?"
-            }
+        require(versione.isNotEmpty() || send("ATI", 3_000).isNotEmpty()) {
+            "Il dispositivo non risponde come un adattatore OBD (ELM327)"
         }
+        versione.ifEmpty { "ELM327" }
+    }
+
+    /** La centralina risponde? Prima richiesta dopo ATSP0: la ricerca protocollo e lenta. */
+    fun centralinaRisponde(): Boolean {
+        val r = send("0100", 12_000)
+        return r.isNotEmpty() && !r.contains("UNABLE") && !r.contains("NO DATA") &&
+            !r.contains("ERROR") && !r.contains("STOPPED")
     }
 
     /** Legge un PID. Ritorna i byte grezzi, la decodifica sta in [PidDecoder]. */
@@ -75,11 +92,13 @@ class Elm327(
             }
     }
 
-    private fun send(cmd: String): String {
+    private fun send(cmd: String, attesaMs: Long = timeoutMs): String {
+        // butta via avanzi di risposte arrivate in ritardo: senza, le risposte si sfasano
+        while (input.available() > 0) input.read()
         output.write("$cmd\r".toByteArray())
         output.flush()
         val sb = StringBuilder()
-        val deadline = System.currentTimeMillis() + timeoutMs
+        val deadline = System.currentTimeMillis() + attesaMs
         while (System.currentTimeMillis() < deadline) {
             if (input.available() > 0) {
                 val c = input.read().toChar()
@@ -87,7 +106,11 @@ class Elm327(
                 sb.append(c)
             } else Thread.sleep(5)
         }
-        return sb.toString().trim()
+        return sb.toString()
+            .replace("SEARCHING...", "")
+            .replace("BUS INIT: ...OK", "")
+            .replace("BUS INIT: OK", "")
+            .trim()
     }
 }
 

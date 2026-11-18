@@ -34,8 +34,31 @@ class PollingService : LifecycleService() {
         super.onCreate()
         val bt = getSystemService(BluetoothManager::class.java)
         trasporto = TrasportoBluetooth(bt?.adapter)
-        startForeground(1, notifica())
+        // Android 14: senza permesso Bluetooth startForeground lancia eccezione e chiude l'app
+        val ok = runCatching { startForeground(1, notifica()) }
+        if (ok.isFailure) {
+            Connessione.imposta("Servizio non avviato: dai il permesso Bluetooth all'app")
+            stopSelf(); return
+        }
         avviaLoop()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        if (intent?.action == AZIONE_RIPROVA) {
+            // nuovo adattatore scelto o "Riprova": chiudi e ricollega subito
+            elm = null
+            trasporto.chiudi()
+            riprovaOra = true
+        }
+        return START_STICKY
+    }
+
+    /** Attesa interrompibile dal pulsante "Riprova" sul telefono. */
+    private suspend fun attendi(ms: Long) {
+        var resto = ms
+        while (resto > 0 && !riprovaOra) { delay(500); resto -= 500 }
+        riprovaOra = false
     }
 
     private fun avviaLoop() = lifecycleScope.launch(Dispatchers.IO) {
@@ -43,7 +66,7 @@ class PollingService : LifecycleService() {
         while (isActive) {
             val connessione = elm ?: connetti()
             if (connessione == null) {
-                delay(ATTESA_SENZA_ADATTATORE)
+                attendi(ATTESA_SENZA_ADATTATORE)
                 continue
             }
 
@@ -54,15 +77,23 @@ class PollingService : LifecycleService() {
                 continue
             }
 
-            runCatching { stato.aggiorna(connessione) }
-                .onFailure { elm = null; trasporto.chiudi() }
+            val giro = runCatching { stato.aggiorna(connessione) }
+            if (giro.isFailure) {
+                Connessione.imposta("Connessione persa con ${Connessione.dispositivo}: ricollego")
+                elm = null; trasporto.chiudi()
+                continue
+            }
 
             if (!stato.motoreAcceso) {
                 // chiave spenta: molla il socket, lascia dormire l'adattatore
+                Connessione.imposta(
+                    "Adattatore OK (${Connessione.dispositivo}), motore spento. " +
+                        "Riprovo tra 60 s, o tocca Riprova a motore acceso.", collegato = true)
                 elm = null
                 trasporto.chiudi()
-                delay(ATTESA_MOTORE_SPENTO)
+                attendi(ATTESA_MOTORE_SPENTO)
             } else {
+                Connessione.imposta("Collegato a ${Connessione.dispositivo}: lettura dati attiva", collegato = true)
                 TensioneLog.registra(applicationContext, stato.valore("42"))
                 delay(INTERVALLO_LETTURA)
             }
@@ -88,9 +119,31 @@ class PollingService : LifecycleService() {
         monitorAttivo = null
     }
 
+    @android.annotation.SuppressLint("MissingPermission")
     private fun connetti(): Elm327? {
-        val device = trasporto.dispositiviAccoppiati().firstOrNull() ?: return null
-        return trasporto.apri(device).getOrNull()?.also { elm = it }
+        val device = runCatching { trasporto.scegli(Connessione.indirizzoScelto(this)) }.getOrNull()
+        if (device == null) {
+            Connessione.imposta("Nessun adattatore: accoppia il vLinker nel Bluetooth del telefono (PIN 1234) e sceglilo qui sotto")
+            return null
+        }
+        val nome = runCatching { device.name }.getOrNull() ?: device.address
+        Connessione.dispositivo = nome
+        Connessione.imposta("Mi collego a $nome...")
+        val r = trasporto.apri(device)
+        val e = r.getOrElse {
+            Connessione.imposta("Errore con $nome: ${it.message}")
+            return null
+        }
+        Connessione.versione = e.versione
+        // prima richiesta lenta (ricerca protocollo): qui, non nel giro da 500 ms
+        if (!runCatching { e.centralinaRisponde() }.getOrDefault(false)) {
+            Connessione.imposta(
+                "$nome risponde (${e.versione}) ma l'auto no: accendi il quadro o il motore. " +
+                    "Riprovo tra 10 s.", collegato = true)
+            trasporto.chiudi()
+            return null
+        }
+        return e.also { elm = it }
     }
 
     override fun onDestroy() {
@@ -122,9 +175,46 @@ class PollingService : LifecycleService() {
         private const val ATTESA_MOTORE_SPENTO = 60_000L
         private const val ATTESA_SENZA_ADATTATORE = 10_000L
 
-        fun avvia(ctx: Context) {
-            ctx.startForegroundService(Intent(ctx, PollingService::class.java))
+        private const val AZIONE_RIPROVA = "cafe.megane.car.RIPROVA"
+        @Volatile private var riprovaOra = false
+
+        /** Parte solo col permesso Bluetooth: senza, Android 14 chiude l'app. */
+        fun avvia(ctx: Context, riprova: Boolean = false) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    ctx, android.Manifest.permission.BLUETOOTH_CONNECT,
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                Connessione.imposta("Manca il permesso Bluetooth: aprilo dalla app sul telefono")
+                return
+            }
+            val i = Intent(ctx, PollingService::class.java)
+            if (riprova) i.action = AZIONE_RIPROVA
+            runCatching { ctx.startForegroundService(i) }
+                .onFailure { Connessione.imposta("Servizio non avviato: apri l'app sul telefono") }
         }
+    }
+}
+
+/** Stato della connessione, mostrato sul telefono e su R-Link2. */
+object Connessione {
+    @Volatile var testo: String = "Avvio..."; private set
+    @Volatile var collegato: Boolean = false; private set
+    @Volatile var dispositivo: String? = null
+    @Volatile var versione: String = ""
+
+    fun imposta(t: String, collegato: Boolean = false) {
+        testo = t; this.collegato = collegato
+    }
+
+    private const val PREFS = "connessione"
+    private const val CHIAVE = "indirizzo_dongle"
+
+    fun indirizzoScelto(ctx: Context): String? =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(CHIAVE, null)
+
+    fun scegli(ctx: Context, indirizzo: String) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(CHIAVE, indirizzo).apply()
     }
 }
 

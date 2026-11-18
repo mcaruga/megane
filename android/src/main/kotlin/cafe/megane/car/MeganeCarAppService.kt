@@ -22,7 +22,7 @@ class MeganeCarAppService : CarAppService() {
             // la griglia su R-Link2 resterebbe vuota perche a leggere e il service
             val stato = StatoApp.stato(carContext)
                 ?: error("Catalogo PID non caricabile")
-            PollingService.avvia(carContext)
+            runCatching { PollingService.avvia(carContext) }
             return DashboardScreen(carContext, stato)
         }
     }

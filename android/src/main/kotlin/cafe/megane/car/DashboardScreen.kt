@@ -21,6 +21,19 @@ class DashboardScreen(
     private val stato: StatoVeicolo,
 ) : Screen(carContext) {
 
+    // ridisegna la griglia ogni secondo mentre e visibile: senza, i valori restano fermi
+    init {
+        lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            private val h = android.os.Handler(android.os.Looper.getMainLooper())
+            private val giro = object : Runnable {
+                override fun run() { invalidate(); h.postDelayed(this, 1000) }
+            }
+            override fun onStart(owner: androidx.lifecycle.LifecycleOwner) { h.postDelayed(giro, 1000) }
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) { h.removeCallbacks(giro) }
+        })
+    }
+
+
     override fun onGetTemplate(): Template {
         val griglia = ItemList.Builder().apply {
             stato.parametriScelti.forEach { def ->
@@ -29,7 +42,11 @@ class DashboardScreen(
         }.build()
 
         return GridTemplate.Builder()
-            .setTitle(if (stato.motoreAcceso) "Megane" else "Motore spento")
+            .setTitle(when {
+                stato.motoreAcceso -> "Megane"
+                Connessione.collegato -> "Motore spento"
+                else -> "vLinker non collegato"
+            })
             .setSingleList(griglia)
             .setHeaderAction(Action.APP_ICON)
             .setActionStrip(

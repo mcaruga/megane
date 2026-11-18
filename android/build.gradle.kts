@@ -63,6 +63,7 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation("androidx.car.app:app:1.4.0")
+    implementation("androidx.car.app:app-projected:1.4.0")   // parte specifica Android Auto
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-service:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")

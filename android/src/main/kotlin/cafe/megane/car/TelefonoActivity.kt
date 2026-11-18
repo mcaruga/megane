@@ -5,6 +5,10 @@ import android.bluetooth.BluetoothManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -21,9 +25,25 @@ import androidx.core.content.ContextCompat
 class TelefonoActivity : ComponentActivity() {
 
     private lateinit var testo: TextView
+    private lateinit var statoConn: TextView
+    private lateinit var listaDongle: LinearLayout
+    private val ui = Handler(Looper.getMainLooper())
+    private val aggiornaStato = object : Runnable {
+        override fun run() {
+            statoConn.text = Connessione.testo
+            statoConn.setTextColor(if (Connessione.collegato) 0xFF2E7D32.toInt() else 0xFFB26A00.toInt())
+            ui.postDelayed(this, 1000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        statoConn = TextView(this).apply { setPadding(32, 32, 32, 8); textSize = 17f }
+        listaDongle = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
+        val riprova = Button(this).apply {
+            text = "Riprova connessione adesso"
+            setOnClickListener { PollingService.avvia(this@TelefonoActivity, riprova = true) }
+        }
         testo = TextView(this).apply {
             setPadding(32, 32, 32, 32); textSize = 14f
             // tocco sul blocco: apre lo storico tensione con grafico
@@ -32,29 +52,72 @@ class TelefonoActivity : ComponentActivity() {
                     this@TelefonoActivity, StoricoTensioneActivity::class.java))
             }
         }
-        setContentView(ScrollView(this).apply { addView(testo) })
+        val colonna = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(statoConn)
+            addView(TextView(context).apply {
+                setPadding(32, 16, 32, 0); textSize = 14f
+                text = "ADATTATORE (tocca quello giusto; deve essere gia accoppiato nel Bluetooth del telefono, PIN 1234):"
+            })
+            addView(listaDongle)
+            addView(riprova)
+            addView(testo)
+        }
+        setContentView(ScrollView(this).apply { addView(colonna) })
 
-        chiediPermessi()
+        if (chiediPermessi()) avviaServizio()
+        mostra()
+    }
+
+    override fun onResume() { super.onResume(); mostra(); ui.post(aggiornaStato) }
+    override fun onPause() { super.onPause(); ui.removeCallbacks(aggiornaStato) }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         avviaServizio()
         mostra()
     }
 
-    override fun onResume() { super.onResume(); mostra() }
+    @Suppress("MissingPermission")
+    private fun mostraDongle(trasporto: TrasportoBluetooth) {
+        listaDongle.removeAllViews()
+        val tutti = runCatching { trasporto.tuttiAccoppiati() }.getOrNull()
+        if (tutti == null) {
+            listaDongle.addView(TextView(this).apply { text = "  (serve il permesso Bluetooth)" })
+            return
+        }
+        if (tutti.isEmpty()) {
+            listaDongle.addView(TextView(this).apply {
+                text = "  Nessun dispositivo accoppiato. Impostazioni > Bluetooth > Accoppia nuovo: vLinker (PIN 1234)."
+            })
+            return
+        }
+        val scelto = trasporto.scegli(Connessione.indirizzoScelto(this))?.address
+        tutti.forEach { d ->
+            listaDongle.addView(Button(this).apply {
+                isAllCaps = false
+                val segno = if (d.address == scelto) "✓ " else ""
+                val obd = if (trasporto.pareObd(d)) "" else "  (non sembra OBD)"
+                text = "$segno${nomeDongle(d)}  ${d.address}$obd"
+                setOnClickListener {
+                    Connessione.scegli(this@TelefonoActivity, d.address)
+                    Connessione.imposta("Scelto ${nomeDongle(d)}: mi collego...")
+                    PollingService.avvia(this@TelefonoActivity, riprova = true)
+                    mostra()
+                }
+            })
+        }
+    }
 
     private fun mostra() {
         val stato = StatoApp.stato(this)
         val bt = getSystemService(BluetoothManager::class.java)
         val trasporto = TrasportoBluetooth(bt?.adapter)
-        val dongle = runCatching { trasporto.dispositiviAccoppiati() }.getOrNull().orEmpty()
+        mostraDongle(trasporto)
 
         testo.text = buildString {
-            appendLine("=== MEGANE DIAG ===").appendLine()
-
-            appendLine("DONGLE OBD ACCOPPIATI:")
-            if (dongle.isEmpty())
-                appendLine("  nessuno. Accoppia il vLinker MC+ nelle impostazioni Bluetooth.")
-            else dongle.forEach { appendLine("  - ${nomeDongle(it)}") }
             appendLine()
+            if (Connessione.versione.isNotEmpty()) appendLine("Adattatore: ${Connessione.versione}").appendLine()
 
             appendLine("STATO AUTO:")
             if (stato == null) appendLine("  catalogo non caricato")
@@ -95,7 +158,8 @@ class TelefonoActivity : ComponentActivity() {
         runCatching { PollingService.avvia(this) }
     }
 
-    private fun chiediPermessi() {
+    /** true se i permessi ci sono gia. */
+    private fun chiediPermessi(): Boolean {
         val servono = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
@@ -105,7 +169,12 @@ class TelefonoActivity : ComponentActivity() {
                 != PackageManager.PERMISSION_GRANTED
             ) servono += Manifest.permission.BLUETOOTH_SCAN
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) servono += Manifest.permission.POST_NOTIFICATIONS
         if (servono.isNotEmpty())
             ActivityCompat.requestPermissions(this, servono.toTypedArray(), 1)
+        return servono.none { it != Manifest.permission.POST_NOTIFICATIONS }
     }
 }
