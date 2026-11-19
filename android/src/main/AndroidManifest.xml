@@ -53,6 +53,17 @@
             </intent-filter>
         </service>
 
+        <!-- Android Auto accetta da APK solo le app multimediali: il cruscotto
+             passa da qui (elenco di valori, nessun audio). -->
+        <service
+            android:name=".MeganeMediaService"
+            android:exported="true"
+            android:label="Megane">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
         <!-- Lettura dati in background: senza questa voce il polling non parte -->
         <service
             android:name=".PollingService"

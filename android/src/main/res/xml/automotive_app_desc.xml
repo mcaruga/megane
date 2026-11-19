@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <automotiveApp>
-    <!-- categoria dichiarata nel manifest (POI). Solo template Grid/List. -->
+    <!-- template: app per auto (Android Auto la mostra solo se installata dal Play Store) -->
     <uses name="template" />
+    <!-- media: cruscotto come elenco multimediale, accettato anche da APK -->
+    <uses name="media" />
 </automotiveApp>
