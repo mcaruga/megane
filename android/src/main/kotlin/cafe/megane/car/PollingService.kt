@@ -29,9 +29,11 @@ class PollingService : LifecycleService() {
     private lateinit var trasporto: TrasportoBluetooth
     private var elm: Elm327? = null
     private var monitorAttivo: cafe.megane.core.ElmMonitor? = null
+    private var fallimenti = 0
 
     override fun onCreate() {
         super.onCreate()
+        attivo = true
         Connessione.ctx = applicationContext
         val bt = getSystemService(BluetoothManager::class.java)
         trasporto = TrasportoBluetooth(bt?.adapter)
@@ -53,11 +55,21 @@ class PollingService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        if (intent?.action == AZIONE_FERMA) {
+            // libera il vLinker per altre app (aggiornamento firmware, app del produttore)
+            Connessione.imposta("Megane ferma: vLinker libero per altre app. Tocca Riprova per ripartire.")
+            elm = null
+            trasporto.chiudi()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == AZIONE_RIPROVA) {
             // nuovo adattatore scelto o "Riprova": chiudi e ricollega subito
             elm = null
             trasporto.chiudi()
             riprovaOra = true
+            fallimenti = 0
         }
         return START_STICKY
     }
@@ -74,9 +86,17 @@ class PollingService : LifecycleService() {
         while (isActive) {
             val connessione = elm ?: connetti()
             if (connessione == null) {
-                attendi(ATTESA_SENZA_ADATTATORE)
+                // vLinker assente o occupato: diradare i tentativi, cosi non lo
+                // si strappa ad altre app (es. aggiornamento firmware)
+                fallimenti++
+                attendi(when {
+                    fallimenti <= 3 -> ATTESA_SENZA_ADATTATORE
+                    fallimenti <= 6 -> 60_000L
+                    else -> 5 * 60_000L
+                })
                 continue
             }
+            fallimenti = 0
 
             // Biforcazione: o leggo i PID, o ascolto il bus. Mai insieme
             // sullo stesso ELM327: ATMA esclude le richieste PID.
@@ -155,6 +175,7 @@ class PollingService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        attivo = false
         monitorAttivo?.stop()
         trasporto.chiudi()
         super.onDestroy()
@@ -174,6 +195,10 @@ class PollingService : LifecycleService() {
             .setContentTitle("Megane")
             .setContentText("Lettura dati in corso")
             .setSmallIcon(R.drawable.ic_generico)
+            .addAction(Notification.Action.Builder(null, "Ferma",
+                android.app.PendingIntent.getService(this, 1,
+                    Intent(this, PollingService::class.java).setAction(AZIONE_FERMA),
+                    android.app.PendingIntent.FLAG_IMMUTABLE)).build())
             .build()
     }
 
@@ -184,6 +209,20 @@ class PollingService : LifecycleService() {
         private const val ATTESA_SENZA_ADATTATORE = 10_000L
 
         private const val AZIONE_RIPROVA = "cafe.megane.car.RIPROVA"
+        private const val AZIONE_FERMA = "cafe.megane.car.FERMA"
+
+        /** Chiude il socket e ferma il servizio: il vLinker resta libero. */
+        @Volatile private var attivo = false
+
+        fun ferma(ctx: Context) {
+            if (!attivo) {
+                Connessione.imposta("Megane ferma: vLinker libero per altre app. Tocca Riprova per ripartire.")
+                return
+            }
+            runCatching {
+                ctx.startService(Intent(ctx, PollingService::class.java).setAction(AZIONE_FERMA))
+            }
+        }
         @Volatile private var riprovaOra = false
 
         /** Parte solo col permesso Bluetooth: senza, Android 14 chiude l'app. */

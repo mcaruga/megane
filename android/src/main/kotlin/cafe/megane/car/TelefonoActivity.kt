@@ -62,6 +62,10 @@ class TelefonoActivity : ComponentActivity() {
             text = "Riprova connessione adesso"
             setOnClickListener { PollingService.avvia(this@TelefonoActivity, riprova = true) }
         }
+        val ferma = Button(this).apply {
+            text = "Ferma Megane (libera il vLinker)"
+            setOnClickListener { PollingService.ferma(this@TelefonoActivity) }
+        }
         testo = TextView(this).apply {
             setPadding(32, 32, 32, 32); textSize = 14f
             // tocco sul blocco: apre lo storico tensione con grafico
@@ -81,6 +85,7 @@ class TelefonoActivity : ComponentActivity() {
             })
             addView(listaDongle)
             addView(riprova)
+            addView(ferma)
             addView(testo)
         }
         setContentView(ScrollView(this).apply { addView(colonna) })
