@@ -86,7 +86,7 @@ class MeganeMediaService : MediaBrowserService() {
             CODICI -> {
                 val codici = st?.dtc.orEmpty()
                 if (codici.isEmpty()) out += voce("nodtc", "Nessun codice guasto attivo",
-                    if (st?.motoreAcceso == true) "Lettura dalla centralina" else "Si legge a quadro acceso")
+                    if (st?.quadroAcceso == true) "Lettura dalla centralina" else "Si legge a quadro acceso")
                 codici.forEach { out += voce("dtc_$it", it, DtcItaliano.spiega(it)) }
             }
         }
@@ -95,6 +95,7 @@ class MeganeMediaService : MediaBrowserService() {
 
     private fun titoloStato(st: StatoVeicolo?) = when {
         st?.motoreAcceso == true -> "Collegato: motore acceso"
+        st?.quadroAcceso == true -> "Collegato: quadro acceso, motore fermo"
         Connessione.collegato -> "vLinker collegato: motore spento"
         else -> "vLinker non collegato"
     }

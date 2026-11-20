@@ -44,6 +44,7 @@ class DashboardScreen(
         return GridTemplate.Builder()
             .setTitle(when {
                 stato.motoreAcceso -> "Megane"
+                stato.quadroAcceso -> "Motore fermo"
                 Connessione.collegato -> "Motore spento"
                 else -> "vLinker non collegato"
             })

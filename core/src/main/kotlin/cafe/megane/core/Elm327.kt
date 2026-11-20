@@ -49,20 +49,24 @@ class Elm327(
     /** La centralina risponde? Prima richiesta dopo ATSP0: la ricerca protocollo e lenta. */
     fun centralinaRisponde(): Boolean {
         val r = send("0100", 12_000)
+        ultimaRisposta = r
         return r.isNotEmpty() && !r.contains("UNABLE") && !r.contains("NO DATA") &&
             !r.contains("ERROR") && !r.contains("STOPPED")
     }
 
-    /** Legge un PID. Ritorna i byte grezzi, la decodifica sta in [PidDecoder]. */
+    /** Ultima risposta grezza: finisce nella diagnosi quando qualcosa non torna. */
+    @Volatile var ultimaRisposta: String = ""
+        private set
+
+    /**
+     * Legge un PID. Ritorna i byte dopo "41 <pid>", la decodifica sta in [PidDecoder].
+     * Cerca l'intestazione attesa riga per riga: regge eco, righe spurie e
+     * risposte di piu centraline (non basta scartare i primi 2 byte).
+     */
     fun readPid(mode: String, pid: String): IntArray? {
         val raw = send(mode + pid)
-        if (raw.contains("NO DATA") || raw.contains("ERROR")) return null
-        // risposta: mode+0x40, pid, poi i dati -> scarta i primi 2 byte
-        return raw.filter { it.isLetterOrDigit() }
-            .chunked(2)
-            .mapNotNull { it.toIntOrNull(16) }
-            .drop(2)
-            .toIntArray()
+        ultimaRisposta = raw
+        return estraiPid(raw, mode, pid)
     }
 
     /** Codici guasto attivi (mode 03) e pendenti (mode 07). */
@@ -114,6 +118,27 @@ class Elm327(
     }
 }
 
+/** Byte dati dopo "4x <pid>" nella risposta grezza, o null. Pura: testabile. */
+fun estraiPid(raw: String, mode: String, pid: String): IntArray? {
+    val errori = listOf("NO DATA", "ERROR", "UNABLE", "STOPPED", "?")
+    if (raw.isBlank() || errori.any { raw.contains(it) }) return null
+    val atteso = "%02X".format(mode.toInt(16) + 0x40) + pid.uppercase()
+    for (riga in raw.lines()) {
+        val hex = riga.filter { it.isLetterOrDigit() }.uppercase()
+        if (hex.any { it !in "0123456789ABCDEF" }) continue
+        var i = 0
+        while (i + atteso.length <= hex.length) {
+            if (hex.startsWith(atteso, i)) {
+                val dati = hex.substring(i + atteso.length).chunked(2)
+                    .filter { it.length == 2 }.map { it.toInt(16) }
+                if (dati.isNotEmpty()) return dati.toIntArray()
+            }
+            i += 2
+        }
+    }
+    return null
+}
+
 /**
  * Risponde alla tua richiesta: nessuna lettura a motore spento.
  * L'app non apre nemmeno la connessione se i giri sono a zero,
@@ -122,8 +147,13 @@ class Elm327(
 object EngineGate {
     private const val RPM_MINIMO = 300
 
-    fun motoreAcceso(elm: Elm327): Boolean {
-        val rpm = elm.readPid("01", "0C") ?: return false
-        return rpm.size >= 2 && ((rpm[0] * 256 + rpm[1]) / 4) > RPM_MINIMO
+    fun motoreAcceso(elm: Elm327): Boolean = (giri(elm) ?: 0) > RPM_MINIMO
+
+    /** Giri motore, o null se la centralina non risponde (quadro spento). */
+    fun giri(elm: Elm327): Int? {
+        val rpm = elm.readPid("01", "0C") ?: return null
+        return if (rpm.size >= 2) (rpm[0] * 256 + rpm[1]) / 4 else null
     }
+
+    fun accesoDaGiri(giri: Int) = giri > RPM_MINIMO
 }

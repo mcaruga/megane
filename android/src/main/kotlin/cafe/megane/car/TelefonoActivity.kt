@@ -177,7 +177,7 @@ class TelefonoActivity : ComponentActivity() {
             appendLine("STATO AUTO:")
             if (stato == null) appendLine("  catalogo non caricato")
             else {
-                appendLine("  motore: ${if (stato.motoreAcceso) "acceso" else "spento"}")
+                appendLine("  motore: ${when { stato.motoreAcceso -> "acceso"; stato.quadroAcceso -> "fermo, quadro acceso"; else -> "spento o centralina muta" }}")
                 stato.parametriScelti.forEach { def ->
                     val v = stato.valore(def.pid)?.let { "%.1f %s".format(it, def.unita) } ?: "--"
                     appendLine("  ${def.traduzione}: $v")

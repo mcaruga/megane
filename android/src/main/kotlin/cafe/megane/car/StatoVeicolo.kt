@@ -20,6 +20,12 @@ class StatoVeicolo private constructor(
     private val prefs: android.content.SharedPreferences,
 ) {
     @Volatile var motoreAcceso: Boolean = false; private set
+    /** La centralina risponde: quadro acceso, anche a motore fermo (Start&Stop). */
+    @Volatile var quadroAcceso: Boolean = false; private set
+    private var mancate = 0
+    private var ultimiDtc = 0L
+    /** Dove scrivere le risposte strane della centralina (diagnosi). */
+    var registra: ((String) -> Unit)? = null
     @Volatile var dtc: List<String> = emptyList(); private set
 
     /** Correlatore eventi CAN, condiviso con CanScreen. */
@@ -51,14 +57,30 @@ class StatoVeicolo private constructor(
         prefs.edit().putStringSet(CHIAVE_SCELTI, attuali).apply()
     }
 
-    /** Un giro di lettura. Chiamato da un loop periodico, non qui. */
+    /**
+     * Un giro di lettura. Chiamato da un loop periodico, non qui.
+     * Si legge finche la centralina risponde (quadro acceso): con lo Start&Stop
+     * il motore si ferma al semaforo e non va chiusa la connessione.
+     * Tre risposte mancate di fila = quadro spento.
+     */
     fun aggiorna(connessione: Elm327?) {
         val adattatore = connessione ?: elm
-        if (adattatore == null) { motoreAcceso = false; return }
-        motoreAcceso = EngineGate.motoreAcceso(adattatore)
-        if (!motoreAcceso) { valori.clear(); return }
+        if (adattatore == null) { spento(); return }
+        val giri = EngineGate.giri(adattatore)
+        if (giri == null) {
+            mancate++
+            if (mancate == 1) registra?.invoke("ECU 010C senza giri: '${adattatore.ultimaRisposta.take(80)}'")
+            if (mancate >= 3) spento()
+            return
+        }
+        if (!quadroAcceso) registra?.invoke("ECU risponde: giri $giri ('${adattatore.ultimaRisposta.take(40)}')")
+        mancate = 0
+        quadroAcceso = true
+        motoreAcceso = EngineGate.accesoDaGiri(giri)
+        valori["0C"] = giri.toDouble()
 
         parametriScelti.forEach { def ->
+            if (def.pid == "0C") return@forEach
             adattatore.readPid(def.mode, def.pid)
                 ?.let { PidDecoder.decodifica(def, it) }
                 ?.let { valori[def.pid] = it }
@@ -67,7 +89,17 @@ class StatoVeicolo private constructor(
         val map = valori["0B"]; val baro = valori["33"]
         if (map != null && baro != null) valori[DERIVATO_BOOST] = PidDecoder.boostBar(map, baro)
 
-        dtc = adattatore.readDtc()
+        // codici guasto: ogni 30 s, non a ogni giro (sono due richieste lente)
+        val ora = System.currentTimeMillis()
+        if (ora - ultimiDtc > 30_000) { dtc = adattatore.readDtc(); ultimiDtc = ora }
+    }
+
+    /** Ultima lettura mancata ma non ancora la terza: quadro ancora considerato acceso. */
+    fun inAttesa() = mancate in 1..2
+
+    private fun spento() {
+        motoreAcceso = false; quadroAcceso = false; mancate = 0; ultimiDtc = 0
+        valori.clear()
     }
 
     companion object {

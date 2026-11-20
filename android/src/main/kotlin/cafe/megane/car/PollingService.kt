@@ -83,6 +83,7 @@ class PollingService : LifecycleService() {
 
     private fun avviaLoop() = lifecycleScope.launch(Dispatchers.IO) {
         val stato = StatoApp.stato(applicationContext) ?: return@launch
+        stato.registra = { runCatching { Diagnosi.evento(applicationContext, it) } }
         while (isActive) {
             val connessione = elm ?: connetti()
             if (connessione == null) {
@@ -112,16 +113,25 @@ class PollingService : LifecycleService() {
                 continue
             }
 
-            if (!stato.motoreAcceso) {
-                // chiave spenta: molla il socket, lascia dormire l'adattatore
+            if (!stato.quadroAcceso) {
+                if (stato.inAttesa()) {
+                    // risposta mancata: non chiudere subito, ritenta tra poco
+                    delay(1000); continue
+                }
+                // la centralina non risponde: quadro spento. Molla il socket, lascia dormire l'adattatore
                 Connessione.imposta(
-                    "Adattatore OK (${Connessione.dispositivo}), motore spento. " +
-                        "Riprovo tra 60 s, o tocca Riprova a motore acceso.", collegato = true)
+                    "vLinker OK (${Connessione.dispositivo}) ma la centralina non risponde: quadro spento? " +
+                        "Riprovo tra 20 s, o tocca Riprova.", collegato = true)
                 elm = null
                 trasporto.chiudi()
                 attendi(ATTESA_MOTORE_SPENTO)
+            } else if (!stato.motoreAcceso) {
+                // quadro acceso, motore fermo (es. Start&Stop al semaforo): resta collegato
+                Connessione.imposta("Collegato a ${Connessione.dispositivo}: quadro acceso, motore fermo", collegato = true)
+                TensioneLog.registra(applicationContext, stato.valore("42"))
+                delay(2000)
             } else {
-                Connessione.imposta("Collegato a ${Connessione.dispositivo}: lettura dati attiva", collegato = true)
+                Connessione.imposta("Collegato a ${Connessione.dispositivo}: motore acceso, lettura attiva", collegato = true)
                 TensioneLog.registra(applicationContext, stato.valore("42"))
                 delay(INTERVALLO_LETTURA)
             }
@@ -165,6 +175,7 @@ class PollingService : LifecycleService() {
         Connessione.versione = e.versione
         // prima richiesta lenta (ricerca protocollo): qui, non nel giro da 500 ms
         if (!runCatching { e.centralinaRisponde() }.getOrDefault(false)) {
+            runCatching { Diagnosi.evento(applicationContext, "ECU 0100 senza risposta valida: '${e.ultimaRisposta.take(80)}'") }
             Connessione.imposta(
                 "$nome risponde (${e.versione}) ma l'auto no: accendi il quadro o il motore. " +
                     "Riprovo tra 10 s.", collegato = true)
@@ -205,7 +216,7 @@ class PollingService : LifecycleService() {
     companion object {
         private const val CANALE = "lettura"
         private const val INTERVALLO_LETTURA = 500L
-        private const val ATTESA_MOTORE_SPENTO = 60_000L
+        private const val ATTESA_MOTORE_SPENTO = 20_000L
         private const val ATTESA_SENZA_ADATTATORE = 10_000L
 
         private const val AZIONE_RIPROVA = "cafe.megane.car.RIPROVA"
