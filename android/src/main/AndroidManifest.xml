@@ -64,6 +64,12 @@
             </intent-filter>
         </service>
 
+        <!-- quadranti disegnati per Android Auto (solo immagini, sola lettura) -->
+        <provider
+            android:name=".GaugeProvider"
+            android:authorities="cafe.megane.car.gauge"
+            android:exported="true" />
+
         <!-- Lettura dati in background: senza questa voce il polling non parte -->
         <service
             android:name=".PollingService"

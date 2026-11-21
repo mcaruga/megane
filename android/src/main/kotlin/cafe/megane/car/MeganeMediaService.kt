@@ -74,13 +74,15 @@ class MeganeMediaService : MediaBrowserService() {
         when (parentId) {
             // le cartelle in cima diventano schede su R-Link2
             RADICE -> {
-                out += cartella(CRUSCOTTO, "Cruscotto")
-                out += cartella(CODICI, "Codici guasto")
+                out += cartella(CRUSCOTTO, "Cruscotto", griglia = true)
+                out += cartella(CODICI, "Codici guasto", griglia = false)
             }
             CRUSCOTTO -> {
-                out += voce("conn", titoloStato(st), Connessione.testo)
+                val k = when { st?.motoreAcceso == true -> 2; st?.quadroAcceso == true -> 1; else -> 0 }
+                out += voce("conn", titoloStato(st), Connessione.testo, GaugeProvider.uriStato(k))
                 st?.parametriScelti?.forEach { def ->
-                    out += voce(def.pid, def.traduzione, testoValore(st.valore(def.pid), def.unita))
+                    val v = st.valore(def.pid)
+                    out += voce(def.pid, def.traduzione, testoValore(v, def.unita), GaugeProvider.uriParametro(def.pid, v))
                 }
             }
             CODICI -> {
@@ -124,12 +126,17 @@ class MeganeMediaService : MediaBrowserService() {
         .setActions(PlaybackState.ACTION_PLAY_FROM_MEDIA_ID or PlaybackState.ACTION_PLAY)
         .build()
 
-    private fun cartella(id: String, titolo: String) = MediaBrowser.MediaItem(
-        MediaDescription.Builder().setMediaId(id).setTitle(titolo).build(),
+    /** Lo stile (griglia o elenco) dei contenuti si dichiara sulla cartella. */
+    private fun cartella(id: String, titolo: String, griglia: Boolean) = MediaBrowser.MediaItem(
+        MediaDescription.Builder().setMediaId(id).setTitle(titolo)
+            .setExtras(Bundle().apply {
+                putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", if (griglia) 2 else 1)
+            }).build(),
         MediaBrowser.MediaItem.FLAG_BROWSABLE)
 
-    private fun voce(id: String, titolo: String, sotto: String) = MediaBrowser.MediaItem(
-        MediaDescription.Builder().setMediaId(id).setTitle(titolo).setSubtitle(sotto).build(),
+    private fun voce(id: String, titolo: String, sotto: String, icona: android.net.Uri? = null) = MediaBrowser.MediaItem(
+        MediaDescription.Builder().setMediaId(id).setTitle(titolo).setSubtitle(sotto)
+            .apply { if (icona != null) setIconUri(icona) }.build(),
         MediaBrowser.MediaItem.FLAG_PLAYABLE)
 
     companion object {
