@@ -36,23 +36,37 @@ class Elm327(
      */
     fun connect(): Result<String> = runCatching {
         val reset = send("ATZ", 5_000)
+        log.add("ATZ | $ultimiByte")
         versione = reset.lines().map { it.trim() }
             .lastOrNull { it.contains("ELM", ignoreCase = true) || it.contains("v", ignoreCase = true) }
             ?: ""
-        initSequence.forEach { send(it) }
-        require(versione.isNotEmpty() || send("ATI", 3_000).isNotEmpty()) {
-            "Il dispositivo non risponde come un adattatore OBD (ELM327)"
+        initSequence.forEach { send(it); log.add("$it | $ultimiByte") }
+        val ati = if (versione.isEmpty()) send("ATI", 3_000) else ""
+        require(versione.isNotEmpty() || (ati.isNotEmpty() && ati.all { it.code in 9..126 })) {
+            "Il dispositivo risponde con byte illeggibili ($ultimiByte): non e un ELM327 leggibile"
         }
         versione.ifEmpty { "ELM327" }
     }
 
     /** La centralina risponde? Prima richiesta dopo ATSP0: la ricerca protocollo e lenta. */
     fun centralinaRisponde(): Boolean {
-        val r = send("0100", 12_000)
-        ultimaRisposta = r
-        return r.isNotEmpty() && !r.contains("UNABLE") && !r.contains("NO DATA") &&
-            !r.contains("ERROR") && !r.contains("STOPPED")
+        // risposta valida solo se contiene davvero "41 00": byte spazzatura NON sono una centralina
+        for (proto in listOf(null, "ATSP6", "ATSP7")) {
+            if (proto != null) send(proto)
+            val r = send("0100", 12_000)
+            ultimaRisposta = r
+            log.add("${proto ?: "ATSP0"} | $ultimiByte")
+            if (estraiPid(r, "01", "00") != null) return true
+        }
+        return false
     }
+
+    /** Ultimo scambio in esadecimale: distingue testo ELM da byte illeggibili. */
+    @Volatile var ultimiByte: String = ""
+        private set
+
+    /** Scambi dell'ultima connessione, per la diagnosi. */
+    val log: MutableList<String> = java.util.concurrent.CopyOnWriteArrayList()
 
     /** Ultima risposta grezza: finisce nella diagnosi quando qualcosa non torna. */
     @Volatile var ultimaRisposta: String = ""
@@ -102,14 +116,18 @@ class Elm327(
         output.write("$cmd\r".toByteArray())
         output.flush()
         val sb = StringBuilder()
+        val hex = StringBuilder()
         val deadline = System.currentTimeMillis() + attesaMs
         while (System.currentTimeMillis() < deadline) {
             if (input.available() > 0) {
-                val c = input.read().toChar()
+                val b = input.read()
+                if (hex.length < 120) hex.append("%02X ".format(b and 0xFF))
+                val c = b.toChar()
                 if (c == '>') break
                 sb.append(c)
             } else Thread.sleep(5)
         }
+        ultimiByte = "$cmd -> ${hex.toString().trim()}"
         return sb.toString()
             .replace("SEARCHING...", "")
             .replace("BUS INIT: ...OK", "")

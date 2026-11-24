@@ -175,7 +175,10 @@ class PollingService : LifecycleService() {
         Connessione.versione = e.versione
         // prima richiesta lenta (ricerca protocollo): qui, non nel giro da 500 ms
         if (!runCatching { e.centralinaRisponde() }.getOrDefault(false)) {
-            runCatching { Diagnosi.evento(applicationContext, "ECU 0100 senza risposta valida: '${e.ultimaRisposta.take(80)}'") }
+            runCatching {
+                Diagnosi.evento(applicationContext, "ECU 0100 senza risposta valida: '${e.ultimaRisposta.take(80)}'")
+                e.log.forEach { Diagnosi.evento(applicationContext, "HEX ${it.take(160)}") }
+            }
             Connessione.imposta(
                 "$nome risponde (${e.versione}) ma l'auto no: accendi il quadro o il motore. " +
                     "Riprovo tra 10 s.", collegato = true)
