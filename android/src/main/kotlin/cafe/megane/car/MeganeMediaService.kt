@@ -29,6 +29,7 @@ class MeganeMediaService : MediaBrowserService() {
         override fun run() {
             notifyChildrenChanged(RADICE)
             notifyChildrenChanged(CRUSCOTTO)
+            notifyChildrenChanged(GT)
             notifyChildrenChanged(CODICI)
             aggiornaGrande()
             h.postDelayed(this, 2000)
@@ -78,7 +79,19 @@ class MeganeMediaService : MediaBrowserService() {
                 // lo stato sta accanto alla scheda: 🟢 motore acceso, 🟡 quadro, ⚪ spento
                 val pallino = when { st?.motoreAcceso == true -> "🟢"; st?.quadroAcceso == true -> "🟡"; else -> "⚪" }
                 out += cartella(CRUSCOTTO, "$pallino Cruscotto", griglia = true)
+                out += cartella(GT, "GT", griglia = true)
                 out += cartella(CODICI, "Codici guasto", griglia = false)
+            }
+            GT -> {
+                st?.gtRichiesto()
+                // lo schermo pista in grande si apre toccando la prima voce
+                out += voce(PISTA, "Schermo pista", "Tocca: giri, velocita, turbo, olio, acqua, batteria, benzina",
+                    GaugeProvider.uriPista(st))
+                (StatoVeicolo.GT_PIDS + StatoVeicolo.GT_CALCOLATI).forEach { pid ->
+                    val def = st?.catalogo?.pids?.firstOrNull { it.pid == pid } ?: return@forEach
+                    val v = st.valore(pid)
+                    out += voce(pid, def.traduzione, testoValore(v, def.unita), GaugeProvider.uriParametro(pid, v))
+                }
             }
             CRUSCOTTO -> {
                 val k = when { st?.motoreAcceso == true -> 2; st?.quadroAcceso == true -> 1; else -> 0 }
@@ -113,16 +126,28 @@ class MeganeMediaService : MediaBrowserService() {
     private fun aggiornaGrande() {
         val id = scelto ?: return
         val st = StatoApp.stato(applicationContext)
-        val def = st?.parametriScelti?.firstOrNull { it.pid == id }
-        val (titolo, testo) = when {
-            def != null -> testoValore(st.valore(def.pid), def.unita) to def.traduzione
-            else -> titoloStato(st) to Connessione.testo
+        val def = st?.catalogo?.pids?.firstOrNull { it.pid == id }
+        val meta = MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_ALBUM, "Megane")
+        if (id == PISTA) {
+            // schermo pista: l'immagine grande e la "copertina"
+            st?.gtRichiesto()
+            val uri = GaugeProvider.uriPista(st).toString()
+            meta.putString(MediaMetadata.METADATA_KEY_TITLE, "Pista")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST,
+                    listOfNotNull(st?.valore("0C")?.let { "%.0f giri".format(it) },
+                        st?.valore("0D")?.let { "%.0f km/h".format(it) }).joinToString("  "))
+                .putString(MediaMetadata.METADATA_KEY_ART_URI, uri)
+                .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, uri)
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, uri)
+        } else {
+            val (titolo, testo) = when {
+                def != null && st != null -> testoValore(st.valore(def.pid), def.unita) to def.traduzione
+                else -> titoloStato(st) to Connessione.testo
+            }
+            meta.putString(MediaMetadata.METADATA_KEY_TITLE, titolo)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, testo)
         }
-        sessione.setMetadata(MediaMetadata.Builder()
-            .putString(MediaMetadata.METADATA_KEY_TITLE, titolo)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, testo)
-            .putString(MediaMetadata.METADATA_KEY_ALBUM, "Megane")
-            .build())
+        sessione.setMetadata(meta.build())
         sessione.setPlaybackState(stato())
     }
 
@@ -148,5 +173,7 @@ class MeganeMediaService : MediaBrowserService() {
         private const val RADICE = "radice"
         private const val CRUSCOTTO = "cruscotto"
         private const val CODICI = "codici"
+        private const val GT = "gt"
+        private const val PISTA = "pista"
     }
 }

@@ -81,7 +81,12 @@ class StatoVeicolo private constructor(
         motoreAcceso = EngineGate.accesoDaGiri(giri)
         valori["0C"] = giri.toDouble()
 
-        val scelti = parametriScelti
+        val gtAttivo = System.currentTimeMillis() - gtVisto < 15_000
+        val scelti = parametriScelti.toMutableList()
+        // la scheda GT legge i suoi dati solo mentre e aperta (ogni PID costa tempo sul bus)
+        if (gtAttivo) GT_PIDS.forEach { p ->
+            catalogo.pids.firstOrNull { it.pid == p }?.let { d -> if (scelti.none { it.pid == p }) scelti += d }
+        }
         // la spinta turbo e calcolata: servono MAP e barometrica anche se non scelte
         val daLeggere = scelti.filter { it.mode != "calc" }.toMutableList()
         if (scelti.any { it.pid == "BOOST" }) {
@@ -97,10 +102,27 @@ class StatoVeicolo private constructor(
         val map = valori["0B"]; val baro = valori["33"]
         if (map != null && baro != null) valori[DERIVATO_BOOST] = PidDecoder.boostBar(map, baro)
 
+        // consumo istantaneo (MAF + velocita) e picchi della giornata: calcolati, nessuna richiesta all'auto
+        val maf = valori["10"]; val kmh = valori["0D"]
+        if (maf != null && kmh != null) PidDecoder.litriPer100km(maf, kmh)?.let { valori["CONS"] = it }
+        else valori.remove("CONS")
+        picco("PICCO_RPM", valori["0C"])
+        picco("PICCO_KMH", kmh)
+        picco("PICCO_BOOST", valori[DERIVATO_BOOST])
+
         // codici guasto: ogni 30 s, non a ogni giro (sono due richieste lente)
         val ora = System.currentTimeMillis()
         if (ora - ultimiDtc > 30_000) { dtc = adattatore.readDtc(); ultimiDtc = ora }
     }
+
+    /** Valore massimo visto da quando e acceso il quadro. */
+    private fun picco(chiave: String, v: Double?) {
+        if (v != null && v > (valori[chiave] ?: Double.NEGATIVE_INFINITY)) valori[chiave] = v
+    }
+
+    /** La scheda GT e aperta: da qui in poi si leggono anche i suoi PID. */
+    @Volatile private var gtVisto = 0L
+    fun gtRichiesto() { gtVisto = System.currentTimeMillis() }
 
     /** Ultima lettura mancata ma non ancora la terza: quadro ancora considerato acceso. */
     fun inAttesa() = mancate in 1..2
@@ -112,6 +134,9 @@ class StatoVeicolo private constructor(
 
     companion object {
         const val DERIVATO_BOOST = "BOOST"
+        /** Dati della scheda GT, nell'ordine in cui compaiono. */
+        val GT_PIDS = listOf("0C", "0D", "BOOST", "0E", "11", "04", "5C", "05", "0F", "42", "10", "2F")
+        val GT_CALCOLATI = listOf("PICCO_BOOST", "PICCO_RPM", "PICCO_KMH", "CONS")
         // v2: nuovi default (carburante, velocita, spinta, olio); le scelte vecchie si azzerano
         private const val CHIAVE_SCELTI = "parametri_scelti_v2"
         private val DEFAULT_SCELTI = setOf("0C", "0D", "BOOST", "04", "42", "2F", "05", "0F", "5C")

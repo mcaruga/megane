@@ -35,7 +35,7 @@ class GaugeProvider : ContentProvider() {
         if (mode != "r") throw SecurityException("sola lettura")
         val ctx = context ?: return null
         val dir = File(ctx.cacheDir, "gauge").apply { mkdirs() }
-        val nome = (uri.path.orEmpty() + "_" + (uri.getQueryParameter("v") ?: uri.getQueryParameter("k") ?: ""))
+        val nome = (uri.path.orEmpty() + "_" + uri.query.orEmpty())
             .filter { it.isLetterOrDigit() || it == '-' || it == '_' } + ".png"
         val file = File(dir, nome)
         if (!file.exists()) {
@@ -58,6 +58,7 @@ class GaugeProvider : ContentProvider() {
                 quadrante(v, def.min, def.max, def.unita, v?.let { def.fuoriRange(it) } ?: false)
             }
             "s" -> stato(uri.getQueryParameter("k")?.toIntOrNull() ?: 0)
+            "p" -> pista { uri.getQueryParameter(it)?.toDoubleOrNull()?.div(10.0) }
             else -> null
         }
     }
@@ -118,6 +119,61 @@ class GaugeProvider : ContentProvider() {
         return b
     }
 
+    /**
+     * Schermo "pista" stile volante da corsa: barra giri con luci cambiata,
+     * velocita e giri grandi, sotto spinta turbo (con picco), olio, acqua, tensione, benzina.
+     * Un'unica immagine larga: Android Auto la mostra grande nella schermata "in riproduzione".
+     */
+    private fun pista(p: (String) -> Double?): Bitmap {
+        val w = 960; val h = 480
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        c.drawColor(Color.parseColor("#0B0E14"))
+
+        val rpm = p("r"); val kmh = p("s")
+        // barra giri: 24 segmenti, verde, giallo, rosso. Oltre 6000 tutti rossi = cambia marcia
+        val seg = 24; val max = 7000.0
+        val acceso = rpm?.let { ((it / max) * seg).toInt().coerceIn(0, seg) } ?: 0
+        val sw = (w - 40f) / seg
+        for (i in 0 until seg) {
+            val col = when {
+                i >= acceso -> TRACCIA
+                rpm != null && rpm >= 6000 -> ROSSO
+                i < seg * 0.6 -> VERDE
+                i < seg * 0.8 -> GIALLO
+                else -> ROSSO
+            }
+            c.drawRoundRect(RectF(20f + i * sw + 3f, 20f, 20f + (i + 1) * sw - 3f, 80f), 10f, 10f, vernice(col))
+        }
+
+        fun n(v: Double?, dec: Int = 0) = v?.let { "%.${dec}f".format(it) } ?: "--"
+        // grandi: velocita a sinistra, giri a destra
+        testo(c, n(kmh), w * 0.27f, 250f, 150f, Color.WHITE, true)
+        testo(c, "km/h", w * 0.27f, 295f, 38f, GRIGIO, false)
+        testo(c, n(rpm), w * 0.73f, 250f, 150f, Color.WHITE, true)
+        testo(c, "giri/min", w * 0.73f, 295f, 38f, GRIGIO, false)
+
+        // riga bassa: cinque celle
+        val celle = listOf(
+            Triple("TURBO bar", n(p("b"), 2), p("pb")?.let { "picco " + n(it, 2) } ?: ""),
+            Triple("OLIO C", n(p("o")), ""),
+            Triple("ACQUA C", n(p("c")), ""),
+            Triple("BATT V", n(p("v"), 1), ""),
+            Triple("BENZINA %", n(p("f")), ""),
+        )
+        val cw = (w - 40f) / celle.size
+        celle.forEachIndexed { i, (titolo, valore, nota) ->
+            val x0 = 20f + i * cw
+            c.drawRoundRect(RectF(x0 + 4f, 330f, x0 + cw - 4f, 465f), 18f, 18f, vernice(SFONDO))
+            val cx = x0 + cw / 2
+            testo(c, titolo, cx, 362f, 26f, GRIGIO, false)
+            val allarme = (titolo.startsWith("BATT") && p("v")?.let { it < 12.2 || it > 15.0 } == true)
+            testo(c, valore, cx, 418f, 54f, if (allarme) ROSSO else Color.WHITE, true)
+            if (nota.isNotEmpty()) testo(c, nota, cx, 452f, 24f, GIALLO, false)
+        }
+        return b
+    }
+
     // il resto del contratto ContentProvider: non serve niente
     override fun query(u: Uri, p: Array<String>?, s: String?, a: Array<String>?, o: String?): Cursor? = null
     override fun insert(u: Uri, v: ContentValues?): Uri? = null
@@ -138,5 +194,15 @@ class GaugeProvider : ContentProvider() {
             Uri.parse("content://$AUTORITA/g/$pid?v=${valore?.let { Math.round(it * 10) } ?: "x"}")
 
         fun uriStato(k: Int): Uri = Uri.parse("content://$AUTORITA/s?k=$k")
+
+        /** Schermo pista: ogni valore x10 nell'indirizzo, cosi cambia quando cambia il dato. */
+        fun uriPista(st: StatoVeicolo?): Uri {
+            fun q(chiave: String, pid: String) = st?.valore(pid)?.let { "$chiave=${Math.round(it * 10)}" }
+            val parti = listOfNotNull(
+                q("r", "0C"), q("s", "0D"), q("b", StatoVeicolo.DERIVATO_BOOST), q("pb", "PICCO_BOOST"),
+                q("o", "5C"), q("c", "05"), q("v", "42"), q("f", "2F"),
+            )
+            return Uri.parse("content://$AUTORITA/p?" + parti.joinToString("&").ifEmpty { "x=0" })
+        }
     }
 }

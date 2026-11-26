@@ -199,6 +199,58 @@
       "motore": ["TCe"]
     },
     {
+      "pid": "CONS",
+      "mode": "calc",
+      "originale": "Instant fuel consumption (MAF + speed)",
+      "traduzione": "Consumo istantaneo",
+      "significato": "Litri ogni 100 km in questo momento, stimato da aria aspirata e velocita. E una stima: sopra 40 km/h e a regime e piu affidabile. Non si calcola sotto 5 km/h.",
+      "unita": "l/100",
+      "min": 0, "max": 30,
+      "bytes": 0,
+      "formula": "calc",
+      "modificabile": "no",
+      "motore": ["TCe"]
+    },
+    {
+      "pid": "PICCO_BOOST",
+      "mode": "calc",
+      "originale": "Peak boost",
+      "traduzione": "Picco spinta turbo",
+      "significato": "Spinta turbo massima vista da quando hai acceso il quadro.",
+      "unita": "bar",
+      "min": -1, "max": 2,
+      "bytes": 0,
+      "formula": "calc",
+      "modificabile": "no",
+      "motore": ["TCe"]
+    },
+    {
+      "pid": "PICCO_RPM",
+      "mode": "calc",
+      "originale": "Peak RPM",
+      "traduzione": "Picco giri motore",
+      "significato": "Giri motore massimi visti da quando hai acceso il quadro.",
+      "unita": "rpm",
+      "min": 0, "max": 7000,
+      "bytes": 0,
+      "formula": "calc",
+      "modificabile": "no",
+      "motore": ["TCe"]
+    },
+    {
+      "pid": "PICCO_KMH",
+      "mode": "calc",
+      "originale": "Peak speed",
+      "traduzione": "Picco velocita",
+      "significato": "Velocita massima vista da quando hai acceso il quadro, dalla centralina.",
+      "unita": "km/h",
+      "min": 0, "max": 250,
+      "bytes": 0,
+      "formula": "calc",
+      "modificabile": "no",
+      "motore": ["TCe"]
+    },
+    {
       "pid": "7C",
       "mode": "01",
       "originale": "DPF Temperature",
