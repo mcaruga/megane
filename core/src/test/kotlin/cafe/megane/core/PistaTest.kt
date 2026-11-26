@@ -36,7 +36,7 @@ class PistaTest {
         assertTrue(s.impostaTraguardo())
         corri(s, 4, 140)                       // ~4 giri
         assertTrue(s.giri.size >= 3, "giri: ${s.giri}")
-        s.giri.forEach { assertEquals(31_416L, it.tempoMs, 350L) }
+        s.giri.forEach { assertTrue(kotlin.math.abs(it.tempoMs - 31_416L) < 350L, "giro: ${it.tempoMs}") }
         assertNotNull(s.migliore)
     }
 
