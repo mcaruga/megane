@@ -66,6 +66,11 @@ class TelefonoActivity : ComponentActivity() {
             text = "Ferma Megane (libera il vLinker)"
             setOnClickListener { PollingService.ferma(this@TelefonoActivity) }
         }
+        val posizione = Button(this).apply {
+            isAllCaps = false
+            text = "Modalita pista: dai il permesso posizione (GPS)"
+            setOnClickListener { chiediPosizione() }
+        }
         testo = TextView(this).apply {
             setPadding(32, 32, 32, 32); textSize = 14f
             // tocco sul blocco: apre lo storico tensione con grafico
@@ -86,6 +91,7 @@ class TelefonoActivity : ComponentActivity() {
             addView(listaDongle)
             addView(riprova)
             addView(ferma)
+            addView(posizione)
             addView(testo)
         }
         setContentView(ScrollView(this).apply { addView(colonna) })
@@ -211,6 +217,27 @@ class TelefonoActivity : ComponentActivity() {
 
     private fun avviaServizio() {
         runCatching { PollingService.avvia(this) }
+    }
+
+    /**
+     * Posizione per la modalita pista, in due passi: prima "mentre usi l'app", poi "sempre"
+     * (serve perche con Android Auto l'app del telefono e in secondo piano).
+     */
+    private fun chiediPosizione() {
+        fun ok(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+        when {
+            !ok(Manifest.permission.ACCESS_FINE_LOCATION) ->
+                ActivityCompat.requestPermissions(this, arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 2)
+            !ok(Manifest.permission.ACCESS_BACKGROUND_LOCATION) -> {
+                android.widget.Toast.makeText(this,
+                    "Scegli \"Consenti sempre\" per usare il GPS con Android Auto",
+                    android.widget.Toast.LENGTH_LONG).show()
+                ActivityCompat.requestPermissions(this,
+                    arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), 3)
+            }
+            else -> android.widget.Toast.makeText(this, "Permesso posizione gia dato", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** true se i permessi ci sono gia. */

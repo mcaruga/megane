@@ -11,6 +11,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import cafe.megane.core.SessionePista
 import java.io.File
 import kotlin.math.abs
 
@@ -59,6 +60,7 @@ class GaugeProvider : ContentProvider() {
             }
             "s" -> stato(uri.getQueryParameter("k")?.toIntOrNull() ?: 0)
             "p" -> pista { uri.getQueryParameter(it)?.toDoubleOrNull()?.div(10.0) }
+            "c" -> circuito()
             else -> null
         }
     }
@@ -174,6 +176,67 @@ class GaugeProvider : ContentProvider() {
         return b
     }
 
+    /**
+     * Modalita pista: disegno del circuito (traccia GPS del miglior giro, o del giro in corso)
+     * con la macchina e la linea del traguardo, a destra i tempi.
+     * Legge la sessione al momento del disegno; l'indirizzo cambia quando cambiano i dati.
+     */
+    private fun circuito(): Bitmap {
+        val w = 960; val h = 480
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        c.drawColor(Color.parseColor("#0B0E14"))
+        val s = PistaStato.sessione
+
+        // ---- circuito (riquadro sinistro) ----
+        val box = RectF(20f, 20f, 600f, 460f)
+        c.drawRoundRect(box, 24f, 24f, vernice(SFONDO))
+        val punti = s.circuito()
+        val pos = s.posizione()
+        val linea = s.linea()
+        val tutti = punti + listOfNotNull(pos) + listOfNotNull(linea?.first, linea?.second)
+        if (punti.size >= 2) {
+            val minX = tutti.minOf { it.x }; val maxX = tutti.maxOf { it.x }
+            val minY = tutti.minOf { it.y }; val maxY = tutti.maxOf { it.y }
+            val dx = maxOf(maxX - minX, 20.0); val dy = maxOf(maxY - minY, 20.0)
+            val m = 40f
+            val scala = minOf((box.width() - 2 * m) / dx, (box.height() - 2 * m) / dy).toFloat()
+            val ox = box.left + (box.width() - dx.toFloat() * scala) / 2f
+            val oy = box.top + (box.height() - dy.toFloat() * scala) / 2f
+            // nord in alto: la y dei metri cresce verso nord, quella dello schermo verso il basso
+            fun sx(x: Double) = ox + ((x - minX).toFloat()) * scala
+            fun sy(y: Double) = oy + ((maxY - y).toFloat()) * scala
+            val path = android.graphics.Path()
+            punti.forEachIndexed { i, p -> if (i == 0) path.moveTo(sx(p.x), sy(p.y)) else path.lineTo(sx(p.x), sy(p.y)) }
+            c.drawPath(path, vernice(Color.parseColor("#8FA3C7"), 10f, Paint.Style.STROKE).apply {
+                strokeJoin = Paint.Join.ROUND
+            })
+            linea?.let { (a, z) ->
+                c.drawLine(sx(a.x), sy(a.y), sx(z.x), sy(z.y), vernice(Color.WHITE, 8f, Paint.Style.STROKE))
+            }
+            pos?.let { c.drawCircle(sx(it.x), sy(it.y), 14f, vernice(VERDE)) }
+        } else {
+            testo(c, "Nessuna traccia", box.centerX(), box.centerY() - 10f, 44f, Color.WHITE, true)
+            testo(c, PistaStato.stato().take(48), box.centerX(), box.centerY() + 40f, 26f, GRIGIO, false)
+        }
+
+        // ---- tempi (colonna destra) ----
+        val cx = 780f
+        fun t(ms: Long?) = ms?.let { SessionePista.formatta(it) } ?: "--"
+        testo(c, "GIRO", cx, 62f, 28f, GRIGIO, false)
+        testo(c, t(PistaStato.tempoGiroMs()), cx, 128f, 64f, Color.WHITE, true)
+        val d = if (PistaStato.gpsVivo()) s.delta() else null
+        val coloreD = when { d == null -> GRIGIO; d <= 0 -> VERDE; else -> ROSSO }
+        testo(c, "DISTACCO", cx, 190f, 28f, GRIGIO, false)
+        testo(c, d?.let { (if (it > 0) "+" else "") + SessionePista.formatta(it) } ?: "--", cx, 245f, 52f, coloreD, true)
+        testo(c, "ULTIMO", cx, 305f, 28f, GRIGIO, false)
+        testo(c, t(s.ultimo?.tempoMs), cx, 350f, 44f, Color.WHITE, true)
+        testo(c, "MIGLIORE", cx, 400f, 28f, GRIGIO, false)
+        testo(c, t(s.migliore?.tempoMs), cx, 445f, 44f, GIALLO, true)
+        testo(c, "giri ${s.giri.size}", 905f, 62f, 28f, GRIGIO, false)
+        return b
+    }
+
     // il resto del contratto ContentProvider: non serve niente
     override fun query(u: Uri, p: Array<String>?, s: String?, a: Array<String>?, o: String?): Cursor? = null
     override fun insert(u: Uri, v: ContentValues?): Uri? = null
@@ -192,6 +255,18 @@ class GaugeProvider : ContentProvider() {
 
         fun uriParametro(pid: String, valore: Double?): Uri =
             Uri.parse("content://$AUTORITA/g/$pid?v=${valore?.let { Math.round(it * 10) } ?: "x"}")
+
+        /** Circuito: l'indirizzo cambia quando cambiano i dati, cosi Android Auto ricarica l'immagine. */
+        fun uriCircuito(): Uri {
+            val s = PistaStato.sessione
+            val q = listOfNotNull(
+                "n=${s.circuito().size}", "g=${s.giri.size}", "l=${if (s.haTraguardo) 1 else 0}",
+                PistaStato.tempoGiroMs()?.let { "t=${it / 100}" },
+                s.delta()?.let { "d=${it / 100}" },
+                s.posizione()?.let { "px=${Math.round(it.x)}&py=${Math.round(it.y)}" },
+            )
+            return Uri.parse("content://$AUTORITA/c?" + q.joinToString("&"))
+        }
 
         fun uriStato(k: Int): Uri = Uri.parse("content://$AUTORITA/s?k=$k")
 
