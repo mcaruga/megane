@@ -27,6 +27,7 @@ class MeganeMediaService : MediaBrowserService() {
 
     private val giro = object : Runnable {
         override fun run() {
+            notifyChildrenChanged(RADICE)
             notifyChildrenChanged(CRUSCOTTO)
             notifyChildrenChanged(CODICI)
             aggiornaGrande()
@@ -74,12 +75,16 @@ class MeganeMediaService : MediaBrowserService() {
         when (parentId) {
             // le cartelle in cima diventano schede su R-Link2
             RADICE -> {
-                out += cartella(CRUSCOTTO, "Cruscotto", griglia = true)
+                // lo stato sta accanto alla scheda: 🟢 motore acceso, 🟡 quadro, ⚪ spento
+                val pallino = when { st?.motoreAcceso == true -> "🟢"; st?.quadroAcceso == true -> "🟡"; else -> "⚪" }
+                out += cartella(CRUSCOTTO, "$pallino Cruscotto", griglia = true)
                 out += cartella(CODICI, "Codici guasto", griglia = false)
             }
             CRUSCOTTO -> {
                 val k = when { st?.motoreAcceso == true -> 2; st?.quadroAcceso == true -> 1; else -> 0 }
-                out += voce("conn", titoloStato(st), Connessione.testo, GaugeProvider.uriStato(k))
+                // a motore acceso il riquadro di stato non serve (c'e il pallino sulla scheda);
+                // negli altri casi resta, perche porta il testo di collegamento/errore
+                if (k != 2) out += voce("conn", titoloStato(st), Connessione.testo, GaugeProvider.uriStato(k))
                 st?.parametriScelti?.forEach { def ->
                     val v = st.valore(def.pid)
                     out += voce(def.pid, def.traduzione, testoValore(v, def.unita), GaugeProvider.uriParametro(def.pid, v))

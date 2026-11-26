@@ -51,8 +51,8 @@
       "pid": "0B",
       "mode": "01",
       "originale": "Intake Manifold Absolute Pressure",
-      "traduzione": "Pressione assoluta collettore (MAP)",
-      "significato": "Pressione nel collettore. Sopra 101 kPa sei in sovralimentazione (turbo in spinta). Sotto = aspirazione.",
+      "traduzione": "Pressione aria in aspirazione (MAP)",
+      "significato": "Pressione dell'aria dopo la farfalla, dentro il collettore, misurata in kPa (100 kPa = 1 bar). Al minimo e circa 30-40 kPa: il motore aspira con depressione. Intorno a 100 kPa = pressione atmosferica. Sopra 100 kPa il turbo sta spingendo. Per la spinta in bar guarda 'Spinta turbo'.",
       "unita": "kPa",
       "min": 0, "max": 255,
       "bytes": 1,
@@ -186,6 +186,19 @@
       "motore": ["TCe", "dCi"]
     },
     {
+      "pid": "BOOST",
+      "mode": "calc",
+      "originale": "Boost (MAP - barometric)",
+      "traduzione": "Spinta turbo",
+      "significato": "Quanto il turbo sta spingendo, in bar rispetto all'aria esterna. Sotto 0 = il motore aspira (rilascio o minimo), 0 = pressione esterna, sopra 0 = turbo in spinta. Calcolato dall'app: pressione aspirazione meno pressione atmosferica.",
+      "unita": "bar",
+      "min": -1, "max": 2,
+      "bytes": 0,
+      "formula": "calc",
+      "modificabile": "no",
+      "motore": ["TCe"]
+    },
+    {
       "pid": "7C",
       "mode": "01",
       "originale": "DPF Temperature",
@@ -230,6 +243,7 @@
       "diagnosi": "Azione concreta anti-inquinamento: se fuori range, cerca aria falsa."
     }
   ],
+  "_derivati": "Valori calcolati dall'app, nessuna richiesta all'auto (mode calc).",
   "parametri_non_accessibili": [
     {
       "originale": "MultiSense drive mode mapping / Sport sound design",

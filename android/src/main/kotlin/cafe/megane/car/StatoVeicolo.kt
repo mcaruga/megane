@@ -46,7 +46,9 @@ class StatoVeicolo private constructor(
     val parametriScelti: List<PidDef>
         get() {
             val salvati = prefs.getStringSet(CHIAVE_SCELTI, null) ?: DEFAULT_SCELTI
+            // ordine di visualizzazione fisso: temperature in fondo
             return catalogo.pids.filter { it.pid in salvati }
+                .sortedBy { ORDINE.indexOf(it.pid).let { i -> if (i < 0) ORDINE.size else i } }
         }
 
     fun valore(pid: String): Double? = valori[pid]
@@ -79,13 +81,19 @@ class StatoVeicolo private constructor(
         motoreAcceso = EngineGate.accesoDaGiri(giri)
         valori["0C"] = giri.toDouble()
 
-        parametriScelti.forEach { def ->
+        val scelti = parametriScelti
+        // la spinta turbo e calcolata: servono MAP e barometrica anche se non scelte
+        val daLeggere = scelti.filter { it.mode != "calc" }.toMutableList()
+        if (scelti.any { it.pid == "BOOST" }) {
+            catalogo.pids.filter { it.pid == "0B" || it.pid == "33" }
+                .forEach { if (daLeggere.none { d -> d.pid == it.pid }) daLeggere += it }
+        }
+        daLeggere.forEach { def ->
             if (def.pid == "0C") return@forEach
             adattatore.readPid(def.mode, def.pid)
                 ?.let { PidDecoder.decodifica(def, it) }
                 ?.let { valori[def.pid] = it }
         }
-        // boost reale: serve anche la barometrica, letta sempre
         val map = valori["0B"]; val baro = valori["33"]
         if (map != null && baro != null) valori[DERIVATO_BOOST] = PidDecoder.boostBar(map, baro)
 
@@ -104,8 +112,14 @@ class StatoVeicolo private constructor(
 
     companion object {
         const val DERIVATO_BOOST = "BOOST"
-        private const val CHIAVE_SCELTI = "parametri_scelti"
-        private val DEFAULT_SCELTI = setOf("0C", "05", "42", "0B", "04", "0F")
+        // v2: nuovi default (carburante, velocita, spinta, olio); le scelte vecchie si azzerano
+        private const val CHIAVE_SCELTI = "parametri_scelti_v2"
+        private val DEFAULT_SCELTI = setOf("0C", "0D", "BOOST", "04", "42", "2F", "05", "0F", "5C")
+        /** Ordine sul cruscotto: dati di guida prima, temperature per ultime. */
+        private val ORDINE = listOf(
+            "0C", "0D", "BOOST", "0B", "04", "11", "2F", "42", "10", "0E", "06", "07",
+            "05", "5C", "0F", "7C", "33",
+        )
 
         fun crea(ctx: CarContext): StatoVeicolo = creaDaContext(ctx)
 
