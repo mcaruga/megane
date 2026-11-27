@@ -35,6 +35,13 @@ class GaugeProvider : ContentProvider() {
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
         if (mode != "r") throw SecurityException("sola lettura")
         val ctx = context ?: return null
+        val file = file(ctx, uri) ?: return null
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+    }
+
+    /** File PNG dell'immagine: lo disegna se non c'e gia. Usato anche per preparare le immagini in anticipo. */
+    @Synchronized
+    internal fun file(ctx: android.content.Context, uri: Uri): File? {
         val dir = File(ctx.cacheDir, "gauge").apply { mkdirs() }
         val nome = (uri.path.orEmpty() + "_" + uri.query.orEmpty())
             .filter { it.isLetterOrDigit() || it == '-' || it == '_' } + ".png"
@@ -44,9 +51,9 @@ class GaugeProvider : ContentProvider() {
             file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bmp.recycle()
             // i valori cambiano di continuo: tieni solo gli ultimi file
-            dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(60)?.forEach { it.delete() }
+            dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(200)?.forEach { it.delete() }
         }
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        return file
     }
 
     private fun disegna(ctx: android.content.Context, uri: Uri): Bitmap? {
@@ -55,9 +62,10 @@ class GaugeProvider : ContentProvider() {
             "g" -> {
                 val pid = segmenti.getOrNull(1) ?: return null
                 val def = StatoApp.stato(ctx)?.catalogo?.pids?.firstOrNull { it.pid == pid } ?: return null
-                val v = uri.getQueryParameter("v")?.toDoubleOrNull()?.div(10.0)
+                val v = uri.getQueryParameter("v")?.toDoubleOrNull()?.div(100.0)
+                val picco = uri.getQueryParameter("p")?.toDoubleOrNull()?.div(100.0)
                 quadrante(v, def.min, def.max, def.unita, v?.let { def.fuoriRange(it) } ?: false,
-                    v?.let { def.coloreFascia(it) })
+                    v?.let { def.coloreFascia(it) }, picco)
             }
             "s" -> stato(uri.getQueryParameter("k")?.toIntOrNull() ?: 0)
             "c" -> circuito()
@@ -87,7 +95,7 @@ class GaugeProvider : ContentProvider() {
         c.drawText(t, cx, y, p)
     }
 
-    private fun quadrante(v: Double?, min: Double, max: Double, unita: String, allarme: Boolean, fascia: String? = null): Bitmap {
+    private fun quadrante(v: Double?, min: Double, max: Double, unita: String, allarme: Boolean, fascia: String? = null, picco: Double? = null): Bitmap {
         val (b, c) = nuova()
         val m = 44f
         val r = RectF(m, m, DIM - m, DIM - m)
@@ -107,8 +115,18 @@ class GaugeProvider : ContentProvider() {
             // sotto l'1% disegna comunque un punto, cosi si vede dove parte
             c.drawArc(r, 135f, maxOf(frazione * 270f, 2f), false, vernice(colore, sp, Paint.Style.STROKE))
         }
+        // lancetta rossa del picco: dove e arrivato il valore da quando e acceso il quadro
+        if (picco != null && max > min && picco > min) {
+            val f = ((picco - min) / (max - min)).coerceIn(0.0, 1.0)
+            val ang = Math.toRadians(135.0 + f * 270.0)
+            val cx0 = DIM / 2f; val raggio = (DIM - 2 * m) / 2f
+            val dentro = raggio - sp / 2f - 6f; val fuori = raggio + sp / 2f + 6f
+            fun px(rr: Float) = cx0 + rr * Math.cos(ang).toFloat()
+            fun py(rr: Float) = cx0 + rr * Math.sin(ang).toFloat()
+            c.drawLine(px(dentro), py(dentro), px(fuori), py(fuori), vernice(ROSSO, 9f, Paint.Style.STROKE))
+        }
         val cx = DIM / 2f
-        val valore = v?.let { if (abs(it) >= 100) "%.0f".format(it) else "%.1f".format(it) } ?: "--"
+        val valore = v?.let { formatta(it, unita, soloNumero = true) } ?: "--"
         testo(c, valore, cx, DIM / 2f + 28f, if (valore.length > 4) 70f else 88f, if (rosso) ROSSO else Color.WHITE, true)
         testo(c, unita, cx, DIM / 2f + 90f, 44f, GRIGIO, false)
         return b
@@ -211,8 +229,40 @@ class GaugeProvider : ContentProvider() {
         }
         private val GRIGIO = Color.parseColor("#9AA3B5")
 
-        fun uriParametro(pid: String, valore: Double?): Uri =
-            Uri.parse("content://$AUTORITA/g/$pid?v=${valore?.let { Math.round(it * 10) } ?: "x"}")
+        /** Cifre decimali per unita: giri e km/h interi, bar e g con due cifre. */
+        private fun decimali(unita: String) = when (unita) {
+            "rpm", "km/h", "C", "%", "kPa" -> 0
+            "bar", "g" -> 2
+            else -> 1
+        }
+
+        fun formatta(v: Double, unita: String, soloNumero: Boolean = false): String {
+            val n = "%.${decimali(unita)}f".format(v)
+            return if (soloNumero) n else "$n $unita"
+        }
+
+        /** Passo di arrotondamento per parametro: meno indirizzi diversi = meno ricaricamenti dell'immagine. */
+        private fun passo(pid: String) = when (pid) {
+            "0C" -> 10.0
+            "0D", "04", "11", "05", "5C", "0F", "0B", "33" -> 1.0
+            "BOOST", "DECEL" -> 0.05
+            "10", "0E" -> 0.5
+            else -> 0.1
+        }
+
+        private fun codifica(pid: String, v: Double?): String {
+            if (v == null) return "x"
+            val q = Math.round(v / passo(pid)) * passo(pid)
+            return Math.round(q * 100).toString()
+        }
+
+        /** Indirizzo dell'immagine di un parametro. Il valore e arrotondato: cambia solo quando cambia la figura. */
+        fun uriParametro(pid: String, valore: Double?, picco: Double? = null): Uri =
+            Uri.parse("content://$AUTORITA/g/$pid?v=${codifica(pid, valore)}" +
+                (picco?.let { "&p=${codifica(pid, it)}" } ?: ""))
+
+        /** Disegna l'immagine in anticipo, cosi quando Android Auto la chiede e gia pronta. */
+        fun prepara(ctx: android.content.Context, uri: Uri) { runCatching { GaugeProvider().file(ctx, uri) } }
 
         /** Circuito: l'indirizzo cambia quando cambiano i dati, cosi Android Auto ricarica l'immagine. */
         fun uriCircuito(): Uri {

@@ -53,9 +53,13 @@ class StatoVeicolo private constructor(
 
     fun valore(pid: String): Double? = valori[pid]
 
+    /** Picco raggiunto da questo parametro (lancetta rossa), se ne ha uno. */
+    fun picco(pid: String): Double? = PICCO_DI[pid]?.let { valori[it] }
+
     /** PID che l'auto dichiara di supportare; null finche non e stata fatta la scansione. */
     @Volatile var supportati: Set<String>? = null; private set
     private var tentativiScan = 0
+    private val campVel = ArrayDeque<Pair<Long, Double>>()
 
     /** false se l'auto NON espone questo dato (cosi non si mostrano riquadri sempre vuoti). */
     fun disponibile(def: PidDef): Boolean {
@@ -63,6 +67,7 @@ class StatoVeicolo private constructor(
         return when (def.pid) {
             "BOOST" -> "0B" in s && "33" in s
             "CONS" -> "10" in s && "0D" in s
+            "DECEL" -> "0D" in s
             else -> def.mode == "calc" || def.pid in s
         }
     }
@@ -131,9 +136,16 @@ class StatoVeicolo private constructor(
         val maf = valori["10"]; val kmh = valori["0D"]
         if (maf != null && kmh != null) PidDecoder.litriPer100km(maf, kmh)?.let { valori["CONS"] = it }
         else valori.remove("CONS")
-        picco("PICCO_RPM", valori["0C"])
-        picco("PICCO_KMH", kmh)
-        picco("PICCO_BOOST", valori[DERIVATO_BOOST])
+        // frenata: quanto rallenti, in g, dal calo di velocita su ~1,5 s (la pressione freni non e in OBD)
+        if (kmh != null) {
+            val ora0 = System.currentTimeMillis()
+            campVel.addLast(ora0 to kmh)
+            while (campVel.size > 1 && ora0 - campVel.first().first > 1_500) campVel.removeFirst()
+            val prima = campVel.first()
+            val dt = (ora0 - prima.first) / 1000.0
+            if (dt >= 0.5) valori["DECEL"] = (((prima.second - kmh) / 3.6) / dt / 9.81).coerceAtLeast(0.0)
+        }
+        PICCO_DI.forEach { (pid, chiave) -> picco(chiave, valori[pid]) }
 
         // codici guasto: ogni 30 s, non a ogni giro (sono due richieste lente)
         val ora = System.currentTimeMillis()
@@ -154,15 +166,20 @@ class StatoVeicolo private constructor(
 
     private fun spento() {
         motoreAcceso = false; quadroAcceso = false; mancate = 0; ultimiDtc = 0
-        supportati = null; tentativiScan = 0
+        supportati = null; tentativiScan = 0; campVel.clear()
         valori.clear()
     }
 
     companion object {
         const val DERIVATO_BOOST = "BOOST"
         /** Dati della scheda GT, nell'ordine in cui compaiono. */
-        val GT_PIDS = listOf("BOOST", "11", "10", "0C", "04", "0E", "42", "0D", "05", "5C", "0F")
-        val GT_CALCOLATI = listOf("PICCO_BOOST", "PICCO_RPM", "PICCO_KMH", "CONS")
+        val GT_PIDS = listOf("BOOST", "11", "DECEL", "10", "0C", "04", "0E", "42", "0D", "05", "5C", "0F")
+        val GT_CALCOLATI = listOf("CONS")
+        /** Parametro -> valore di picco (lancetta rossa sul quadrante). */
+        val PICCO_DI = mapOf(
+            "0C" to "PICCO_RPM", "0D" to "PICCO_KMH", "BOOST" to "PICCO_BOOST",
+            "04" to "PICCO_CARICO", "DECEL" to "PICCO_DECEL",
+        )
         // v2: nuovi default (carburante, velocita, spinta, olio); le scelte vecchie si azzerano
         private const val CHIAVE_SCELTI = "parametri_scelti_v2"
         private val DEFAULT_SCELTI = setOf("0C", "0D", "BOOST", "04", "42", "2F", "05", "0F", "5C")

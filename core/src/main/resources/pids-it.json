@@ -207,6 +207,20 @@
       "motore": ["TCe"]
     },
     {
+      "pid": "DECEL",
+      "mode": "calc",
+      "originale": "Deceleration (from speed)",
+      "traduzione": "Frenata (decelerazione)",
+      "significato": "NON e la pressione dei freni: l'auto non la fornisce via OBD. E quanto stai rallentando, in g, calcolato dal calo di velocita negli ultimi 1-2 secondi. Circa 0,3 g = frenata normale, 0,8 g o piu = frenata a fondo. La lancetta rossa e il massimo raggiunto.",
+      "unita": "g",
+      "min": 0, "max": 1.2,
+      "bytes": 0,
+      "formula": "calc",
+      "modificabile": "no",
+      "fasce": [{"da": 0, "colore": "verde"}, {"da": 0.4, "colore": "giallo"}, {"da": 0.7, "colore": "arancione"}, {"da": 0.9, "colore": "rosso"}],
+      "motore": ["TCe"]
+    },
+    {
       "pid": "CONS",
       "mode": "calc",
       "originale": "Instant fuel consumption (MAF + speed)",

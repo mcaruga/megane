@@ -26,15 +26,37 @@ class MeganeMediaService : MediaBrowserService() {
     private val h = Handler(Looper.getMainLooper())
     @Volatile private var scelto: String? = null
 
+    // le immagini si disegnano PRIMA di avvisare Android Auto: quando le chiede sono gia pronte
+    // (senza, compare un quadratino segnaposto finche non sono disegnate)
+    private val esecutore = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    private fun daPreparare(st: StatoVeicolo?): List<android.net.Uri> {
+        if (st == null) return emptyList()
+        val pid = (st.parametriScelti.map { it.pid } + StatoVeicolo.GT_PIDS + StatoVeicolo.GT_CALCOLATI).distinct()
+        val tessere = pid.mapNotNull { id ->
+            val def = st.catalogo.pids.firstOrNull { it.pid == id } ?: return@mapNotNull null
+            if (!st.disponibile(def)) return@mapNotNull null
+            GaugeProvider.uriParametro(id, st.valore(id), st.picco(id))
+        }
+        return if (PistaStato.gpsAttivo) tessere + GaugeProvider.uriCircuito() else tessere
+    }
+
     private val giro = object : Runnable {
         override fun run() {
-            notifyChildrenChanged(RADICE)
-            notifyChildrenChanged(CRUSCOTTO)
-            notifyChildrenChanged(GT)
-            notifyChildrenChanged(PISTA_MOD)
-            notifyChildrenChanged(CODICI)
-            aggiornaGrande()
-            h.postDelayed(this, 2000)
+            esecutore.execute {
+                val st = StatoApp.stato(applicationContext)
+                runCatching { daPreparare(st).forEach { GaugeProvider.prepara(applicationContext, it) } }
+                h.post {
+                    notifyChildrenChanged(RADICE)
+                    notifyChildrenChanged(CRUSCOTTO)
+                    notifyChildrenChanged(GT)
+                    notifyChildrenChanged(PISTA_MOD)
+                    notifyChildrenChanged(CODICI)
+                    aggiornaGrande()
+                    h.postDelayed(giro, 2000)
+                }
+            }
+            return
         }
     }
 
@@ -78,6 +100,7 @@ class MeganeMediaService : MediaBrowserService() {
 
     override fun onDestroy() {
         h.removeCallbacks(giro)
+        esecutore.shutdown()
         sessione.release()
         super.onDestroy()
     }
@@ -108,7 +131,8 @@ class MeganeMediaService : MediaBrowserService() {
                     val def = st?.catalogo?.pids?.firstOrNull { it.pid == pid } ?: return@forEach
                     if (!st.disponibile(def)) return@forEach      // l'auto non lo espone: niente riquadro vuoto
                     val v = st.valore(pid)
-                    out += voce(pid, def.traduzione, testoValore(v, def.unita), GaugeProvider.uriParametro(pid, v))
+                    out += voce(pid, def.traduzione, testoValore(v, def.unita),
+                        GaugeProvider.uriParametro(pid, v, st.picco(pid)))
                 }
             }
             CRUSCOTTO -> {
@@ -116,7 +140,8 @@ class MeganeMediaService : MediaBrowserService() {
                 // Il testo di collegamento/errore resta nell'app sul telefono.
                 st?.parametriScelti?.forEach { def ->
                     val v = st.valore(def.pid)
-                    out += voce(def.pid, def.traduzione, testoValore(v, def.unita), GaugeProvider.uriParametro(def.pid, v))
+                    out += voce(def.pid, def.traduzione, testoValore(v, def.unita),
+                        GaugeProvider.uriParametro(def.pid, v, st.picco(def.pid)))
                 }
             }
             PISTA_MOD -> {
@@ -151,7 +176,7 @@ class MeganeMediaService : MediaBrowserService() {
         else -> "vLinker non collegato"
     }
 
-    private fun testoValore(v: Double?, unita: String) = v?.let { "%.1f %s".format(it, unita) } ?: "--"
+    private fun testoValore(v: Double?, unita: String) = v?.let { GaugeProvider.formatta(it, unita) } ?: "--"
 
     /** Riga toccata: valore in grande nella schermata "in riproduzione". */
     private fun aggiornaGrande() {
