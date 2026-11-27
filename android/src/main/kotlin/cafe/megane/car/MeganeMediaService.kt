@@ -41,7 +41,7 @@ class MeganeMediaService : MediaBrowserService() {
         return if (PistaStato.gpsAttivo) tessere + GaugeProvider.uriCircuito() else tessere
     }
 
-    private val giro = object : Runnable {
+    private val giro: Runnable = object : Runnable {
         override fun run() {
             esecutore.execute {
                 val st = StatoApp.stato(applicationContext)
