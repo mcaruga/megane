@@ -104,11 +104,9 @@ class MeganeMediaService : MediaBrowserService() {
             GT -> {
                 st?.gtRichiesto()
                 out += cartella(PISTA_MOD, "Modalita pista (circuito e cronometro)", griglia = false)
-                // lo schermo GT in grande si apre toccando questa voce
-                out += voce(PISTA, "Schermo GT", "Tocca: giri, velocita, turbo, olio, acqua, batteria, benzina",
-                    GaugeProvider.uriPista(st))
                 (StatoVeicolo.GT_PIDS + StatoVeicolo.GT_CALCOLATI).forEach { pid ->
                     val def = st?.catalogo?.pids?.firstOrNull { it.pid == pid } ?: return@forEach
+                    if (!st.disponibile(def)) return@forEach      // l'auto non lo espone: niente riquadro vuoto
                     val v = st.valore(pid)
                     out += voce(pid, def.traduzione, testoValore(v, def.unita), GaugeProvider.uriParametro(pid, v))
                 }
@@ -172,17 +170,6 @@ class MeganeMediaService : MediaBrowserService() {
                 .putString(MediaMetadata.METADATA_KEY_ART_URI, uri)
                 .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, uri)
                 .putString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, uri)
-        } else if (id == PISTA) {
-            // schermo pista: l'immagine grande e la "copertina"
-            st?.gtRichiesto()
-            val uri = GaugeProvider.uriPista(st).toString()
-            meta.putString(MediaMetadata.METADATA_KEY_TITLE, "Pista")
-                .putString(MediaMetadata.METADATA_KEY_ARTIST,
-                    listOfNotNull(st?.valore("0C")?.let { "%.0f giri".format(it) },
-                        st?.valore("0D")?.let { "%.0f km/h".format(it) }).joinToString("  "))
-                .putString(MediaMetadata.METADATA_KEY_ART_URI, uri)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, uri)
-                .putString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, uri)
         } else {
             val (titolo, testo) = when {
                 def != null && st != null -> testoValore(st.valore(def.pid), def.unita) to def.traduzione
@@ -218,7 +205,6 @@ class MeganeMediaService : MediaBrowserService() {
         private const val CRUSCOTTO = "cruscotto"
         private const val CODICI = "codici"
         private const val GT = "gt"
-        private const val PISTA = "pista"
         private const val PISTA_MOD = "pistamod"
         private const val P_MAPPA = "p_mappa"
         private const val P_AVVIA = "p_avvia"

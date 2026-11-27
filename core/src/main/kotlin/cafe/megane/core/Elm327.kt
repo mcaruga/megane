@@ -83,6 +83,25 @@ class Elm327(
         return estraiPid(raw, mode, pid)
     }
 
+    /**
+     * Quali PID (mode 01) l'auto sa rispondere: sola lettura, richieste standard 0100, 0120, 0140...
+     * Ritorna i PID in esadecimale a due cifre ("0C", "5C"). Vuoto se la centralina non risponde.
+     */
+    fun pidSupportati(): Set<String> {
+        val out = mutableSetOf<String>()
+        var base = 0
+        while (base <= 0xC0) {
+            val dati = readPid("01", "%02X".format(base)) ?: break
+            if (dati.size < 4) break
+            for (i in 0 until 32) {
+                if ((dati[i / 8] shr (7 - i % 8)) and 1 == 1) out += "%02X".format(base + i + 1)
+            }
+            if ("%02X".format(base + 0x20) !in out) break      // l'ultimo bit dice se esiste il blocco successivo
+            base += 0x20
+        }
+        return out
+    }
+
     /** Codici guasto attivi (mode 03) e pendenti (mode 07). */
     fun readDtc(): List<String> = buildList {
         addAll(parseDtc(send("03")))

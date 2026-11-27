@@ -56,10 +56,10 @@ class GaugeProvider : ContentProvider() {
                 val pid = segmenti.getOrNull(1) ?: return null
                 val def = StatoApp.stato(ctx)?.catalogo?.pids?.firstOrNull { it.pid == pid } ?: return null
                 val v = uri.getQueryParameter("v")?.toDoubleOrNull()?.div(10.0)
-                quadrante(v, def.min, def.max, def.unita, v?.let { def.fuoriRange(it) } ?: false)
+                quadrante(v, def.min, def.max, def.unita, v?.let { def.fuoriRange(it) } ?: false,
+                    v?.let { def.coloreFascia(it) })
             }
             "s" -> stato(uri.getQueryParameter("k")?.toIntOrNull() ?: 0)
-            "p" -> pista { uri.getQueryParameter(it)?.toDoubleOrNull()?.div(10.0) }
             "c" -> circuito()
             else -> null
         }
@@ -87,18 +87,21 @@ class GaugeProvider : ContentProvider() {
         c.drawText(t, cx, y, p)
     }
 
-    private fun quadrante(v: Double?, min: Double, max: Double, unita: String, allarme: Boolean): Bitmap {
+    private fun quadrante(v: Double?, min: Double, max: Double, unita: String, allarme: Boolean, fascia: String? = null): Bitmap {
         val (b, c) = nuova()
         val m = 44f
         val r = RectF(m, m, DIM - m, DIM - m)
         val sp = 30f
         // arco da 135 gradi, 270 di giro, come un contagiri
         c.drawArc(r, 135f, 270f, false, vernice(TRACCIA, sp, Paint.Style.STROKE))
+        // colore a fasce dal catalogo (verde, giallo, arancione, rosso, azzurro); senza fasce: verde o rosso
         val colore = when {
             v == null -> TRACCIA
+            fascia != null -> colorePerNome(fascia)
             allarme -> ROSSO
             else -> VERDE
         }
+        val rosso = (fascia == "rosso") || (fascia == null && allarme)
         if (v != null && max > min) {
             val frazione = ((v - min) / (max - min)).coerceIn(0.0, 1.0).toFloat()
             // sotto l'1% disegna comunque un punto, cosi si vede dove parte
@@ -106,7 +109,7 @@ class GaugeProvider : ContentProvider() {
         }
         val cx = DIM / 2f
         val valore = v?.let { if (abs(it) >= 100) "%.0f".format(it) else "%.1f".format(it) } ?: "--"
-        testo(c, valore, cx, DIM / 2f + 28f, if (valore.length > 4) 70f else 88f, if (allarme) ROSSO else Color.WHITE, true)
+        testo(c, valore, cx, DIM / 2f + 28f, if (valore.length > 4) 70f else 88f, if (rosso) ROSSO else Color.WHITE, true)
         testo(c, unita, cx, DIM / 2f + 90f, 44f, GRIGIO, false)
         return b
     }
@@ -118,61 +121,6 @@ class GaugeProvider : ContentProvider() {
         c.drawCircle(cx, DIM / 2f - 30f, 70f, vernice(colore))
         testo(c, when (k) { 2 -> "Motore"; 1 -> "Quadro"; else -> "Spento" }, cx, DIM / 2f + 100f, 56f, Color.WHITE, true)
         testo(c, when (k) { 2 -> "acceso"; 1 -> "acceso"; else -> "o non collegato" }, cx, DIM / 2f + 150f, 40f, GRIGIO, false)
-        return b
-    }
-
-    /**
-     * Schermo "pista" stile volante da corsa: barra giri con luci cambiata,
-     * velocita e giri grandi, sotto spinta turbo (con picco), olio, acqua, tensione, benzina.
-     * Un'unica immagine larga: Android Auto la mostra grande nella schermata "in riproduzione".
-     */
-    private fun pista(p: (String) -> Double?): Bitmap {
-        val w = 960; val h = 480
-        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val c = Canvas(b)
-        c.drawColor(Color.parseColor("#0B0E14"))
-
-        val rpm = p("r"); val kmh = p("s")
-        // barra giri: 24 segmenti, verde, giallo, rosso. Oltre 6000 tutti rossi = cambia marcia
-        val seg = 24; val max = 7000.0
-        val acceso = rpm?.let { ((it / max) * seg).toInt().coerceIn(0, seg) } ?: 0
-        val sw = (w - 40f) / seg
-        for (i in 0 until seg) {
-            val col = when {
-                i >= acceso -> TRACCIA
-                rpm != null && rpm >= 6000 -> ROSSO
-                i < seg * 0.6 -> VERDE
-                i < seg * 0.8 -> GIALLO
-                else -> ROSSO
-            }
-            c.drawRoundRect(RectF(20f + i * sw + 3f, 20f, 20f + (i + 1) * sw - 3f, 80f), 10f, 10f, vernice(col))
-        }
-
-        fun n(v: Double?, dec: Int = 0) = v?.let { "%.${dec}f".format(it) } ?: "--"
-        // grandi: velocita a sinistra, giri a destra
-        testo(c, n(kmh), w * 0.27f, 250f, 150f, Color.WHITE, true)
-        testo(c, "km/h", w * 0.27f, 295f, 38f, GRIGIO, false)
-        testo(c, n(rpm), w * 0.73f, 250f, 150f, Color.WHITE, true)
-        testo(c, "giri/min", w * 0.73f, 295f, 38f, GRIGIO, false)
-
-        // riga bassa: cinque celle
-        val celle = listOf(
-            Triple("TURBO bar", n(p("b"), 2), p("pb")?.let { "picco " + n(it, 2) } ?: ""),
-            Triple("OLIO C", n(p("o")), ""),
-            Triple("ACQUA C", n(p("c")), ""),
-            Triple("BATT V", n(p("v"), 1), ""),
-            Triple("BENZINA %", n(p("f")), ""),
-        )
-        val cw = (w - 40f) / celle.size
-        celle.forEachIndexed { i, (titolo, valore, nota) ->
-            val x0 = 20f + i * cw
-            c.drawRoundRect(RectF(x0 + 4f, 330f, x0 + cw - 4f, 465f), 18f, 18f, vernice(SFONDO))
-            val cx = x0 + cw / 2
-            testo(c, titolo, cx, 362f, 26f, GRIGIO, false)
-            val allarme = (titolo.startsWith("BATT") && p("v")?.let { it < 12.2 || it > 15.0 } == true)
-            testo(c, valore, cx, 418f, 54f, if (allarme) ROSSO else Color.WHITE, true)
-            if (nota.isNotEmpty()) testo(c, nota, cx, 452f, 24f, GIALLO, false)
-        }
         return b
     }
 
@@ -251,6 +199,16 @@ class GaugeProvider : ContentProvider() {
         private val VERDE = Color.parseColor("#4DD0A1")
         private val ROSSO = Color.parseColor("#FF5252")
         private val GIALLO = Color.parseColor("#FFC24D")
+        private val ARANCIONE = Color.parseColor("#FF8A3D")
+        private val AZZURRO = Color.parseColor("#7FD6FF")
+
+        private fun colorePerNome(n: String) = when (n) {
+            "azzurro" -> AZZURRO
+            "giallo" -> GIALLO
+            "arancione" -> ARANCIONE
+            "rosso" -> ROSSO
+            else -> VERDE
+        }
         private val GRIGIO = Color.parseColor("#9AA3B5")
 
         fun uriParametro(pid: String, valore: Double?): Uri =
@@ -269,15 +227,5 @@ class GaugeProvider : ContentProvider() {
         }
 
         fun uriStato(k: Int): Uri = Uri.parse("content://$AUTORITA/s?k=$k")
-
-        /** Schermo pista: ogni valore x10 nell'indirizzo, cosi cambia quando cambia il dato. */
-        fun uriPista(st: StatoVeicolo?): Uri {
-            fun q(chiave: String, pid: String) = st?.valore(pid)?.let { "$chiave=${Math.round(it * 10)}" }
-            val parti = listOfNotNull(
-                q("r", "0C"), q("s", "0D"), q("b", StatoVeicolo.DERIVATO_BOOST), q("pb", "PICCO_BOOST"),
-                q("o", "5C"), q("c", "05"), q("v", "42"), q("f", "2F"),
-            )
-            return Uri.parse("content://$AUTORITA/p?" + parti.joinToString("&").ifEmpty { "x=0" })
-        }
     }
 }

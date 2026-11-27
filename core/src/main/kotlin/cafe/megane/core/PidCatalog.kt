@@ -4,6 +4,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+/** Da questo valore in su il quadrante e di questo colore (verde, giallo, arancione, rosso, azzurro). */
+@Serializable
+data class Fascia(val da: Double, val colore: String)
+
 @Serializable
 data class PidDef(
     val pid: String,
@@ -22,7 +26,12 @@ data class PidDef(
     val diagnosi: String? = null,
     @SerialName("allarme_sopra") val allarmeSopra: Double? = null,
     @SerialName("allarme_sotto") val allarmeSotto: Double? = null,
+    /** Fasce di colore in ordine crescente di "da"; sotto la prima vale la prima. */
+    val fasce: List<Fascia>? = null,
 ) {
+    fun coloreFascia(v: Double): String? =
+        fasce?.takeIf { it.isNotEmpty() }?.let { f -> (f.lastOrNull { v >= it.da } ?: f.first()).colore }
+
     /** Etichetta come l'hai chiesta: originale + [traduzione] + [modificabile]. */
     fun etichetta(): String = "$originale [$traduzione] [${
         when (modificabile) {

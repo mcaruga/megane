@@ -16,6 +16,7 @@
       "bytes": 2,
       "formula": "(A*256+B)/4",
       "modificabile": "no",
+      "fasce": [{"da": 0, "colore": "verde"}, {"da": 5500, "colore": "giallo"}, {"da": 6300, "colore": "rosso"}],
       "motore": ["TCe", "dCi"],
       "eco": "Cambia marcia tra 1800 e 2200 rpm per consumo minimo."
     },
@@ -30,6 +31,7 @@
       "bytes": 1,
       "formula": "A-40",
       "modificabile": "no",
+      "fasce": [{"da": -40, "colore": "azzurro"}, {"da": 70, "colore": "verde"}, {"da": 105, "colore": "giallo"}, {"da": 110, "colore": "arancione"}, {"da": 115, "colore": "rosso"}],
       "motore": ["TCe", "dCi"],
       "allarme_sopra": 110,
       "eco": "Sotto 70 gradi: motore in arricchimento, consumo +30 percento."
@@ -45,6 +47,7 @@
       "bytes": 1,
       "formula": "A-40",
       "modificabile": "no",
+      "fasce": [{"da": -40, "colore": "azzurro"}, {"da": 5, "colore": "verde"}, {"da": 50, "colore": "giallo"}, {"da": 60, "colore": "arancione"}, {"da": 70, "colore": "rosso"}],
       "motore": ["TCe", "dCi"]
     },
     {
@@ -72,6 +75,7 @@
       "bytes": 1,
       "formula": "A*100/255",
       "modificabile": "no",
+      "fasce": [{"da": 0, "colore": "verde"}, {"da": 70, "colore": "giallo"}, {"da": 80, "colore": "arancione"}, {"da": 90, "colore": "rosso"}],
       "motore": ["TCe", "dCi"],
       "eco": "Carico 60-75 percento a giri bassi = zona di massima efficienza."
     },
@@ -99,6 +103,7 @@
       "bytes": 1,
       "formula": "A",
       "modificabile": "no",
+      "fasce": [{"da": 0, "colore": "verde"}, {"da": 140, "colore": "giallo"}, {"da": 200, "colore": "rosso"}],
       "motore": ["TCe", "dCi"]
     },
     {
@@ -153,6 +158,7 @@
       "bytes": 2,
       "formula": "(A*256+B)/1000",
       "modificabile": "no",
+      "fasce": [{"da": 0, "colore": "rosso"}, {"da": 11.8, "colore": "arancione"}, {"da": 12.4, "colore": "verde"}, {"da": 15.0, "colore": "rosso"}],
       "motore": ["TCe", "dCi"],
       "allarme_sotto": 12.2,
       "allarme_sopra": 15.0,
@@ -169,6 +175,7 @@
       "bytes": 1,
       "formula": "A-40",
       "modificabile": "no",
+      "fasce": [{"da": -40, "colore": "azzurro"}, {"da": 70, "colore": "verde"}, {"da": 120, "colore": "giallo"}, {"da": 130, "colore": "arancione"}, {"da": 140, "colore": "rosso"}],
       "motore": ["TCe", "dCi"],
       "allarme_sopra": 130
     },
@@ -196,6 +203,7 @@
       "bytes": 0,
       "formula": "calc",
       "modificabile": "no",
+      "fasce": [{"da": -1, "colore": "verde"}, {"da": 0.6, "colore": "giallo"}, {"da": 0.9, "colore": "arancione"}, {"da": 1.2, "colore": "rosso"}],
       "motore": ["TCe"]
     },
     {

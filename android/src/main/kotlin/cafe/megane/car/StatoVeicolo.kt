@@ -47,11 +47,25 @@ class StatoVeicolo private constructor(
         get() {
             val salvati = prefs.getStringSet(CHIAVE_SCELTI, null) ?: DEFAULT_SCELTI
             // ordine di visualizzazione fisso: temperature in fondo
-            return catalogo.pids.filter { it.pid in salvati }
+            return catalogo.pids.filter { it.pid in salvati && disponibile(it) }
                 .sortedBy { ORDINE.indexOf(it.pid).let { i -> if (i < 0) ORDINE.size else i } }
         }
 
     fun valore(pid: String): Double? = valori[pid]
+
+    /** PID che l'auto dichiara di supportare; null finche non e stata fatta la scansione. */
+    @Volatile var supportati: Set<String>? = null; private set
+    private var tentativiScan = 0
+
+    /** false se l'auto NON espone questo dato (cosi non si mostrano riquadri sempre vuoti). */
+    fun disponibile(def: PidDef): Boolean {
+        val s = supportati ?: return true
+        return when (def.pid) {
+            "BOOST" -> "0B" in s && "33" in s
+            "CONS" -> "10" in s && "0D" in s
+            else -> def.mode == "calc" || def.pid in s
+        }
+    }
 
     fun alterna(def: PidDef) {
         val attuali = (prefs.getStringSet(CHIAVE_SCELTI, null) ?: DEFAULT_SCELTI).toMutableSet()
@@ -77,6 +91,15 @@ class StatoVeicolo private constructor(
         }
         if (!quadroAcceso) registra?.invoke("ECU risponde: giri $giri ('${adattatore.ultimaRisposta.take(40)}')")
         mancate = 0
+        if (supportati == null && tentativiScan < 3) {
+            tentativiScan++
+            // una volta per accensione: chiede all'auto quali dati sa dare
+            val trovati = adattatore.pidSupportati()
+            if ("0C" in trovati) {
+                supportati = trovati
+                registra?.invoke("PID supportati (${trovati.size}): " + trovati.sorted().joinToString(" "))
+            } else registra?.invoke("Scansione PID non valida: '${adattatore.ultimaRisposta.take(60)}'")
+        }
         quadroAcceso = true
         motoreAcceso = EngineGate.accesoDaGiri(giri)
         valori["0C"] = giri.toDouble()
@@ -85,7 +108,9 @@ class StatoVeicolo private constructor(
         val scelti = parametriScelti.toMutableList()
         // la scheda GT legge i suoi dati solo mentre e aperta (ogni PID costa tempo sul bus)
         if (gtAttivo) GT_PIDS.forEach { p ->
-            catalogo.pids.firstOrNull { it.pid == p }?.let { d -> if (scelti.none { it.pid == p }) scelti += d }
+            catalogo.pids.firstOrNull { it.pid == p }?.let { d ->
+                if (disponibile(d) && scelti.none { it.pid == p }) scelti += d
+            }
         }
         // la spinta turbo e calcolata: servono MAP e barometrica anche se non scelte
         val daLeggere = scelti.filter { it.mode != "calc" }.toMutableList()
@@ -129,13 +154,14 @@ class StatoVeicolo private constructor(
 
     private fun spento() {
         motoreAcceso = false; quadroAcceso = false; mancate = 0; ultimiDtc = 0
+        supportati = null; tentativiScan = 0
         valori.clear()
     }
 
     companion object {
         const val DERIVATO_BOOST = "BOOST"
         /** Dati della scheda GT, nell'ordine in cui compaiono. */
-        val GT_PIDS = listOf("0C", "0D", "BOOST", "0E", "11", "04", "5C", "05", "0F", "42", "10", "2F")
+        val GT_PIDS = listOf("BOOST", "11", "10", "0C", "04", "0E", "42", "0D", "05", "5C", "0F")
         val GT_CALCOLATI = listOf("PICCO_BOOST", "PICCO_RPM", "PICCO_KMH", "CONS")
         // v2: nuovi default (carburante, velocita, spinta, olio); le scelte vecchie si azzerano
         private const val CHIAVE_SCELTI = "parametri_scelti_v2"
