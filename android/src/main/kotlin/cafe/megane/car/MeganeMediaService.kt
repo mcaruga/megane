@@ -114,10 +114,8 @@ class MeganeMediaService : MediaBrowserService() {
                 }
             }
             CRUSCOTTO -> {
-                val k = when { st?.motoreAcceso == true -> 2; st?.quadroAcceso == true -> 1; else -> 0 }
-                // a motore acceso il riquadro di stato non serve (c'e il pallino sulla scheda);
-                // negli altri casi resta, perche porta il testo di collegamento/errore
-                if (k != 2) out += voce("conn", titoloStato(st), Connessione.testo, GaugeProvider.uriStato(k))
+                // niente riquadro di stato: lo stato e il pallino sulla scheda.
+                // Il testo di collegamento/errore resta nell'app sul telefono.
                 st?.parametriScelti?.forEach { def ->
                     val v = st.valore(def.pid)
                     out += voce(def.pid, def.traduzione, testoValore(v, def.unita), GaugeProvider.uriParametro(def.pid, v))
