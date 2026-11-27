@@ -23,7 +23,7 @@ class FasceTest {
     fun caricoArancioneEPoiRosso() {
         val d = def("04")
         assertEquals("verde", d.coloreFascia(50.0))
-        assertEquals("giallo", d.coloreFascia(75.0 - 6))
+        assertEquals("giallo", d.coloreFascia(75.0))
         assertEquals("arancione", d.coloreFascia(85.0))
         assertEquals("rosso", d.coloreFascia(95.0))
     }
