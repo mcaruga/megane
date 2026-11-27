@@ -31,6 +31,22 @@ class StatoVeicolo private constructor(
     /** Correlatore eventi CAN, condiviso con CanScreen. */
     val correlatore = CanCorrelatore()
 
+    /** Livello benzina stimato: persistente tra un avvio e l'altro. */
+    val serbatoio: cafe.megane.core.StimaSerbatoio = cafe.megane.core.StimaSerbatoio.carica(
+        listOf("capacita", "litri", "k", "grezzo", "aggiunti", "valido")
+            .associateWith { prefs.getFloat("serb_$it", Float.NaN).toDouble() }
+            .filterValues { !it.isNaN() }
+    )
+    private var serbSalvato = 0L
+    private var serbUltimo = 0L
+    fun salvaSerbatoio() {
+        prefs.edit().apply { serbatoio.salva().forEach { (k, v) -> putFloat("serb_$k", v.toFloat()) } }.apply()
+        serbSalvato = System.currentTimeMillis()
+    }
+
+    /** Massimo del quadrante (il serbatoio ha la sua capacita), o null per usare quello del catalogo. */
+    fun massimo(pid: String): Double? = if (pid == "BENZINA") serbatoio.capacita else null
+
     /** Riassunto della registrazione CAN (pulsante sul telefono), da condividere. */
     val riepilogo = cafe.megane.core.CanRiepilogo()
 
@@ -71,6 +87,7 @@ class StatoVeicolo private constructor(
             "BOOST" -> "0B" in s && "33" in s
             "CONS" -> "10" in s && "0D" in s
             "DECEL" -> "0D" in s
+            "BENZINA" -> "10" in s || "5E" in s
             else -> def.mode == "calc" || def.pid in s
         }
     }
@@ -126,6 +143,12 @@ class StatoVeicolo private constructor(
             catalogo.pids.filter { it.pid == "0B" || it.pid == "33" }
                 .forEach { if (daLeggere.none { d -> d.pid == it.pid }) daLeggere += it }
         }
+        // la stima benzina vive di flusso carburante: 5E se l'auto lo da, altrimenti aria aspirata (MAF)
+        if (scelti.any { it.pid == "BENZINA" }) {
+            val sup = supportati
+            catalogo.pids.filter { it.pid == "10" || (it.pid == "5E" && sup != null && "5E" in sup) }
+                .forEach { if (daLeggere.none { d -> d.pid == it.pid }) daLeggere += it }
+        }
         daLeggere.forEach { def ->
             if (def.pid == "0C") return@forEach
             adattatore.readPid(def.mode, def.pid)
@@ -134,6 +157,17 @@ class StatoVeicolo private constructor(
         }
         val map = valori["0B"]; val baro = valori["33"]
         if (map != null && baro != null) valori[DERIVATO_BOOST] = PidDecoder.boostBar(map, baro)
+
+        // livello benzina: integra il flusso dall'ultimo giro (salta se il buco e lungo: connessione persa)
+        val oraS = System.currentTimeMillis()
+        val flusso = valori["5E"] ?: valori["10"]?.let { cafe.megane.core.StimaSerbatoio.flussoDaMaf(it) }
+        if (flusso != null && serbUltimo != 0L) {
+            val dt = (oraS - serbUltimo) / 1000.0
+            if (dt in 0.05..3.0) serbatoio.integra(flusso, dt)
+        }
+        serbUltimo = oraS
+        serbatoio.litri?.let { valori["BENZINA"] = it } ?: valori.remove("BENZINA")
+        if (oraS - serbSalvato > 30_000) salvaSerbatoio()
 
         // consumo istantaneo (MAF + velocita) e picchi della giornata: calcolati, nessuna richiesta all'auto
         val maf = valori["10"]; val kmh = valori["0D"]
@@ -170,13 +204,15 @@ class StatoVeicolo private constructor(
     private fun spento() {
         motoreAcceso = false; quadroAcceso = false; mancate = 0; ultimiDtc = 0
         supportati = null; tentativiScan = 0; campVel.clear()
+        if (serbUltimo != 0L) salvaSerbatoio()
+        serbUltimo = 0L
         valori.clear()
     }
 
     companion object {
         const val DERIVATO_BOOST = "BOOST"
         /** Dati della scheda GT, nell'ordine in cui compaiono. */
-        val GT_PIDS = listOf("BOOST", "11", "DECEL", "10", "0C", "04", "0E", "42", "0D", "05", "5C", "0F")
+        val GT_PIDS = listOf("BOOST", "BENZINA", "11", "DECEL", "10", "0C", "04", "0E", "42", "0D", "05", "5C", "0F")
         val GT_CALCOLATI = listOf("CONS")
         /** Parametro -> valore di picco (lancetta rossa sul quadrante). */
         val PICCO_DI = mapOf(
@@ -185,10 +221,10 @@ class StatoVeicolo private constructor(
         )
         // v2: nuovi default (carburante, velocita, spinta, olio); le scelte vecchie si azzerano
         private const val CHIAVE_SCELTI = "parametri_scelti_v2"
-        private val DEFAULT_SCELTI = setOf("0C", "0D", "BOOST", "04", "42", "2F", "05", "0F", "5C")
+        private val DEFAULT_SCELTI = setOf("0C", "0D", "BOOST", "BENZINA", "04", "42", "05", "0F", "5C")
         /** Ordine sul cruscotto: dati di guida prima, temperature per ultime. */
         private val ORDINE = listOf(
-            "0C", "0D", "BOOST", "0B", "04", "11", "2F", "42", "10", "0E", "06", "07",
+            "0C", "0D", "BOOST", "BENZINA", "0B", "04", "11", "2F", "42", "10", "0E", "06", "07",
             "05", "5C", "0F", "7C", "33",
         )
 

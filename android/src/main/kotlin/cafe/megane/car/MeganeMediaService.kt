@@ -36,7 +36,7 @@ class MeganeMediaService : MediaBrowserService() {
         val tessere = pid.mapNotNull { id ->
             val def = st.catalogo.pids.firstOrNull { it.pid == id } ?: return@mapNotNull null
             if (!st.disponibile(def)) return@mapNotNull null
-            GaugeProvider.uriParametro(id, st.valore(id), st.picco(id))
+            GaugeProvider.uriParametro(id, st.valore(id), st.picco(id), st.massimo(id))
         }
         return if (PistaStato.gpsAttivo) tessere + GaugeProvider.uriCircuito() else tessere
     }
@@ -131,8 +131,8 @@ class MeganeMediaService : MediaBrowserService() {
                     val def = st?.catalogo?.pids?.firstOrNull { it.pid == pid } ?: return@forEach
                     if (!st.disponibile(def)) return@forEach      // l'auto non lo espone: niente riquadro vuoto
                     val v = st.valore(pid)
-                    out += voce(pid, def.traduzione, testoValore(v, def.unita),
-                        GaugeProvider.uriParametro(pid, v, st.picco(pid)))
+                    out += voce(pid, def.traduzione, sottotitolo(st, pid, v, def.unita),
+                        GaugeProvider.uriParametro(pid, v, st.picco(pid), st.massimo(pid)))
                 }
             }
             CRUSCOTTO -> {
@@ -140,8 +140,8 @@ class MeganeMediaService : MediaBrowserService() {
                 // Il testo di collegamento/errore resta nell'app sul telefono.
                 st?.parametriScelti?.forEach { def ->
                     val v = st.valore(def.pid)
-                    out += voce(def.pid, def.traduzione, testoValore(v, def.unita),
-                        GaugeProvider.uriParametro(def.pid, v, st.picco(def.pid)))
+                    out += voce(def.pid, def.traduzione, sottotitolo(st, def.pid, v, def.unita),
+                        GaugeProvider.uriParametro(def.pid, v, st.picco(def.pid), st.massimo(def.pid)))
                 }
             }
             PISTA_MOD -> {
@@ -174,6 +174,14 @@ class MeganeMediaService : MediaBrowserService() {
         st?.quadroAcceso == true -> "Collegato: quadro acceso, motore fermo"
         Connessione.collegato -> "vLinker collegato: motore spento"
         else -> "vLinker non collegato"
+    }
+
+    /** Sotto il titolo del riquadro: il valore, e per la benzina anche quanto e il pieno. */
+    private fun sottotitolo(st: StatoVeicolo, pid: String, v: Double?, unita: String): String {
+        if (pid != "BENZINA") return testoValore(v, unita)
+        val s = st.serbatoio
+        return if (v == null) "Dimmi quanto ce n'e: app Megane sul telefono"
+        else "%.1f di %.0f L  (%.0f%%)".format(v, s.capacita, (s.frazione() ?: 0.0) * 100)
     }
 
     private fun testoValore(v: Double?, unita: String) = v?.let { GaugeProvider.formatta(it, unita) } ?: "--"

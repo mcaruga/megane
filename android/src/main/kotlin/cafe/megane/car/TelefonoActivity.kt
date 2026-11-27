@@ -33,11 +33,13 @@ class TelefonoActivity : ComponentActivity() {
     private lateinit var listaDongle: LinearLayout
     private lateinit var aggiorna: Button
     private lateinit var registra: Button
+    private lateinit var serbTxt: TextView
     private var registrando = false
     private val ui = Handler(Looper.getMainLooper())
     private val aggiornaStato = object : Runnable {
         override fun run() {
             statoConn.text = Connessione.testo
+            if (::serbTxt.isInitialized) serbTxt.text = testoSerbatoio()
             statoConn.setTextColor(if (Connessione.collegato) 0xFF2E7D32.toInt() else 0xFFB26A00.toInt())
             aggiorna.text = Aggiornamenti.stato.ifEmpty { "Controlla aggiornamenti" }
                 .let { if (it.startsWith("Disponibile")) "AGGIORNA: $it" else it }
@@ -78,6 +80,40 @@ class TelefonoActivity : ComponentActivity() {
             text = "Registra bus CAN 60 s (cerca pressione gomme, benzina)"
             setOnClickListener { registraCan() }
         }
+        // ---- benzina stimata: tu dici i litri, l'app sottrae il consumo e si calibra ai pieni ----
+        serbTxt = TextView(this).apply { setPadding(32, 16, 32, 0); textSize = 15f }
+        val serbIn = android.widget.EditText(this).apply {
+            hint = "litri (es. 38,5)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        fun litriInseriti(): Double? = serbIn.text.toString().replace(',', '.').toDoubleOrNull()
+            ?.takeIf { it > 0 }
+            .also { if (it == null) android.widget.Toast.makeText(this, "Scrivi i litri", android.widget.Toast.LENGTH_SHORT).show() }
+        fun serb(azione: (StatoVeicolo, Double) -> Unit) {
+            val st = StatoApp.stato(this) ?: return
+            val l = litriInseriti() ?: return
+            azione(st, l); st.salvaSerbatoio(); serbIn.text.clear()
+            serbTxt.text = testoSerbatoio()
+        }
+        val serbBottoni = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(Button(context).apply {
+                isAllCaps = false; text = "Pieno fatto: ho messo questi litri"
+                setOnClickListener { serb { st, l -> st.serbatoio.pieno(l) } }
+            })
+            addView(Button(context).apply {
+                isAllCaps = false; text = "Ho aggiunto questi litri (non pieno)"
+                setOnClickListener { serb { st, l -> st.serbatoio.aggiunti(l) } }
+            })
+            addView(Button(context).apply {
+                isAllCaps = false; text = "Ora nel serbatoio ci sono questi litri"
+                setOnClickListener { serb { st, l -> st.serbatoio.imposta(l) } }
+            })
+            addView(Button(context).apply {
+                isAllCaps = false; text = "Capacita del serbatoio = questi litri"
+                setOnClickListener { serb { st, l -> st.serbatoio.capacita = l.coerceIn(20.0, 100.0) } }
+            })
+        }
         testo = TextView(this).apply {
             setPadding(32, 32, 32, 32); textSize = 14f
             // tocco sul blocco: apre lo storico tensione con grafico
@@ -100,6 +136,9 @@ class TelefonoActivity : ComponentActivity() {
             addView(ferma)
             addView(posizione)
             addView(registra)
+            addView(serbTxt)
+            addView(serbIn)
+            addView(serbBottoni)
             addView(testo)
         }
         setContentView(ScrollView(this).apply { addView(colonna) })
@@ -225,6 +264,15 @@ class TelefonoActivity : ComponentActivity() {
 
     private fun avviaServizio() {
         runCatching { PollingService.avvia(this) }
+    }
+
+    private fun testoSerbatoio(): String {
+        val st = StatoApp.stato(this) ?: return "BENZINA: non disponibile"
+        val s = st.serbatoio
+        val l = s.litri
+        return if (l == null) "BENZINA (stima): dimmi quanti litri ci sono ora (guarda l'indicatore dell'auto) e scrivili qui sotto."
+        else "BENZINA (stima): %.1f di %.0f L (%.0f%%). Fattore di calibrazione %.2f. Dopo 2-3 pieni e piu precisa.".format(
+            l, s.capacita, (s.frazione() ?: 0.0) * 100, s.k)
     }
 
     /**

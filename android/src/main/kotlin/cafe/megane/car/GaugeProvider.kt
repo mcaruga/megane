@@ -64,7 +64,8 @@ class GaugeProvider : ContentProvider() {
                 val def = StatoApp.stato(ctx)?.catalogo?.pids?.firstOrNull { it.pid == pid } ?: return null
                 val v = uri.getQueryParameter("v")?.toDoubleOrNull()?.div(100.0)
                 val picco = uri.getQueryParameter("p")?.toDoubleOrNull()?.div(100.0)
-                quadrante(v, def.min, def.max, def.unita, v?.let { def.fuoriRange(it) } ?: false,
+                val massimo = uri.getQueryParameter("mx")?.toDoubleOrNull()?.div(100.0) ?: def.max
+                quadrante(v, def.min, massimo, def.unita, v?.let { def.fuoriRange(it) } ?: false,
                     v?.let { def.coloreFascia(it) }, picco)
             }
             "s" -> stato(uri.getQueryParameter("k")?.toIntOrNull() ?: 0)
@@ -257,9 +258,10 @@ class GaugeProvider : ContentProvider() {
         }
 
         /** Indirizzo dell'immagine di un parametro. Il valore e arrotondato: cambia solo quando cambia la figura. */
-        fun uriParametro(pid: String, valore: Double?, picco: Double? = null): Uri =
+        fun uriParametro(pid: String, valore: Double?, picco: Double? = null, massimo: Double? = null): Uri =
             Uri.parse("content://$AUTORITA/g/$pid?v=${codifica(pid, valore)}" +
-                (picco?.let { "&p=${codifica(pid, it)}" } ?: ""))
+                (picco?.let { "&p=${codifica(pid, it)}" } ?: "") +
+                (massimo?.let { "&mx=${Math.round(it * 100)}" } ?: ""))
 
         /** Disegna l'immagine in anticipo, cosi quando Android Auto la chiede e gia pronta. */
         fun prepara(ctx: android.content.Context, uri: Uri) { runCatching { GaugeProvider().file(ctx, uri) } }

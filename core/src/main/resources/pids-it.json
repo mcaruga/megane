@@ -207,6 +207,33 @@
       "motore": ["TCe"]
     },
     {
+      "pid": "BENZINA",
+      "mode": "calc",
+      "originale": "Fuel level (estimated)",
+      "traduzione": "Benzina nel serbatoio (stima)",
+      "significato": "Litri stimati nel serbatoio. L'auto non da il livello via OBD: l'app parte dal livello che le dici (o dal pieno) e sottrae il consumo calcolato. Si calibra da sola a ogni pieno. E una stima: la spia dell'auto resta il riferimento.",
+      "unita": "L",
+      "min": 0, "max": 47,
+      "bytes": 0,
+      "formula": "calc",
+      "modificabile": "no",
+      "fasce": [{"da": 0, "colore": "rosso"}, {"da": 5, "colore": "arancione"}, {"da": 9, "colore": "giallo"}, {"da": 14, "colore": "verde"}],
+      "motore": ["TCe"]
+    },
+    {
+      "pid": "5E",
+      "mode": "01",
+      "originale": "Engine Fuel Rate",
+      "traduzione": "Flusso carburante",
+      "significato": "Litri di carburante all'ora, se la centralina lo fornisce. Piu preciso del calcolo dall'aria aspirata: se c'e, la stima del serbatoio lo usa.",
+      "unita": "l/h",
+      "min": 0, "max": 60,
+      "bytes": 2,
+      "formula": "(A*256+B)/20",
+      "modificabile": "no",
+      "motore": ["TCe"]
+    },
+    {
       "pid": "DECEL",
       "mode": "calc",
       "originale": "Deceleration (from speed)",
