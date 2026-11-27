@@ -212,7 +212,7 @@ class StatoVeicolo private constructor(
     companion object {
         const val DERIVATO_BOOST = "BOOST"
         /** Dati della scheda GT, nell'ordine in cui compaiono. */
-        val GT_PIDS = listOf("BOOST", "BENZINA", "11", "DECEL", "10", "0C", "04", "0E", "42", "0D", "05", "5C", "0F")
+        val GT_PIDS = listOf("BOOST", "BENZINA", "49", "11", "DECEL", "10", "0C", "04", "0E", "78", "44", "42", "0D", "05", "68")
         val GT_CALCOLATI = listOf("CONS")
         /** Parametro -> valore di picco (lancetta rossa sul quadrante). */
         val PICCO_DI = mapOf(
@@ -221,11 +221,11 @@ class StatoVeicolo private constructor(
         )
         // v2: nuovi default (carburante, velocita, spinta, olio); le scelte vecchie si azzerano
         private const val CHIAVE_SCELTI = "parametri_scelti_v2"
-        private val DEFAULT_SCELTI = setOf("0C", "0D", "BOOST", "BENZINA", "04", "42", "05", "0F", "5C")
+        private val DEFAULT_SCELTI = setOf("0C", "0D", "BOOST", "BENZINA", "04", "42", "05", "68")
         /** Ordine sul cruscotto: dati di guida prima, temperature per ultime. */
         private val ORDINE = listOf(
-            "0C", "0D", "BOOST", "BENZINA", "0B", "04", "11", "2F", "42", "10", "0E", "06", "07",
-            "05", "5C", "0F", "7C", "33",
+            "0C", "0D", "BOOST", "BENZINA", "49", "0B", "04", "11", "2F", "42", "10", "0E", "44", "06", "07",
+            "78", "3C", "05", "5C", "68", "0F", "46", "7C", "33",
         )
 
         fun crea(ctx: CarContext): StatoVeicolo = creaDaContext(ctx)

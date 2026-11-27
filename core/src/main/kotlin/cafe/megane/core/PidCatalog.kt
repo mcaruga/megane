@@ -70,7 +70,12 @@ object PidDecoder {
         if (raw.size < def.bytes) return null
         val a = raw[0].toDouble()
         val b = if (raw.size > 1) raw[1].toDouble() else 0.0
+        val c = if (raw.size > 2) raw[2].toDouble() else 0.0
         return when (def.formula) {
+            // PID a piu byte: il primo puo essere una maschera dei sensori presenti
+            "B-40" -> b - 40
+            "((B*256+C)/10)-40" -> ((b * 256 + c) / 10) - 40
+            "(A*256+B)*2/65536" -> (a * 256 + b) * 2 / 65536
             "A" -> a
             "A-40" -> a - 40
             "A/2-64" -> a / 2 - 64

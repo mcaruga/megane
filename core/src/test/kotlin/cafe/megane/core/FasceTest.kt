@@ -42,3 +42,29 @@ class FasceTest {
         assertEquals(null, def("10").coloreFascia(5.0))
     }
 }
+
+class FormuleMeganeTest {
+    private val catalogo = PidDecoder.carica(
+        javaClass.classLoader.getResourceAsStream("pids-it.json")!!.bufferedReader().readText()
+    )
+    private fun v(pid: String, vararg b: Int) =
+        PidDecoder.decodifica(catalogo.pids.first { it.pid == pid }, b)
+
+    @Test
+    fun ariaAspirataPid68PrendeIlSecondoByte() {
+        // A = maschera sensori (0x01), B = 0x50 -> 80-40 = 40 C
+        assertEquals(40.0, v("68", 0x01, 0x50))
+    }
+
+    @Test
+    fun gasDiScaricoPid78() {
+        // maschera 0x01, poi 0x0B 0xB8 = 3000/10 - 40 = 260 C
+        assertEquals(260.0, v("78", 0x01, 0x0B, 0xB8))
+    }
+
+    @Test
+    fun lambdaEPedale() {
+        assertEquals(1.0, v("44", 0x80, 0x00)!!, 0.0001)
+        assertEquals(100.0, v("49", 0xFF)!!, 0.001)
+    }
+}
