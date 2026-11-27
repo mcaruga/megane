@@ -149,6 +149,7 @@ class PollingService : LifecycleService() {
         runCatching {
             monitor.ascolta { frame ->
                 stato.correlatore.osserva(frame)
+                stato.riepilogo.osserva(frame)
                 stato.contaFrame()
                 // appena l'utente lascia il monitor, interrompi l'ascolto
                 if (stato.modalita != StatoVeicolo.Modalita.CAN_MONITOR) monitor.stop()

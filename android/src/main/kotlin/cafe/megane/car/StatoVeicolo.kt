@@ -31,6 +31,9 @@ class StatoVeicolo private constructor(
     /** Correlatore eventi CAN, condiviso con CanScreen. */
     val correlatore = CanCorrelatore()
 
+    /** Riassunto della registrazione CAN (pulsante sul telefono), da condividere. */
+    val riepilogo = cafe.megane.core.CanRiepilogo()
+
     /** Modalita di lavoro del dongle. PID e CAN sono mutuamente esclusivi. */
     enum class Modalita { PID, CAN_MONITOR }
     @Volatile var modalita: Modalita = Modalita.PID

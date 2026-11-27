@@ -32,6 +32,8 @@ class TelefonoActivity : ComponentActivity() {
     private lateinit var statoConn: TextView
     private lateinit var listaDongle: LinearLayout
     private lateinit var aggiorna: Button
+    private lateinit var registra: Button
+    private var registrando = false
     private val ui = Handler(Looper.getMainLooper())
     private val aggiornaStato = object : Runnable {
         override fun run() {
@@ -71,6 +73,11 @@ class TelefonoActivity : ComponentActivity() {
             text = "Modalita pista: dai il permesso posizione (GPS)"
             setOnClickListener { chiediPosizione() }
         }
+        registra = Button(this).apply {
+            isAllCaps = false
+            text = "Registra bus CAN 60 s (cerca pressione gomme, benzina)"
+            setOnClickListener { registraCan() }
+        }
         testo = TextView(this).apply {
             setPadding(32, 32, 32, 32); textSize = 14f
             // tocco sul blocco: apre lo storico tensione con grafico
@@ -92,6 +99,7 @@ class TelefonoActivity : ComponentActivity() {
             addView(riprova)
             addView(ferma)
             addView(posizione)
+            addView(registra)
             addView(testo)
         }
         setContentView(ScrollView(this).apply { addView(colonna) })
@@ -217,6 +225,42 @@ class TelefonoActivity : ComponentActivity() {
 
     private fun avviaServizio() {
         runCatching { PollingService.avvia(this) }
+    }
+
+    /**
+     * Ascolto passivo del bus CAN per 60 s, poi riassunto da condividere: serve a trovare
+     * i messaggi con pressione gomme o benzina. Non invia nulla all'auto.
+     * Fai l'ascolto con il quadro acceso, e confronta con quello che dice il quadro strumenti.
+     */
+    private fun registraCan() {
+        if (registrando) return
+        val st = StatoApp.stato(this) ?: return
+        registrando = true
+        st.riepilogo.azzera()
+        st.modalita = StatoVeicolo.Modalita.CAN_MONITOR
+        val fine = System.currentTimeMillis() + 60_000
+        val passo = object : Runnable {
+            override fun run() {
+                val resto = (fine - System.currentTimeMillis()) / 1000
+                if (resto > 0) {
+                    registra.text = "Registro il bus CAN... ${resto} s  (${st.riepilogo.totale()} frame, ${st.riepilogo.quantiId()} ID)"
+                    ui.postDelayed(this, 1000)
+                } else {
+                    st.modalita = StatoVeicolo.Modalita.PID
+                    registrando = false
+                    registra.text = "Registra bus CAN 60 s (cerca pressione gomme, benzina)"
+                    // riparte pulita: dopo ATMA l'adattatore e in modalita monitor
+                    PollingService.avvia(this@TelefonoActivity, riprova = true)
+                    val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Registrazione CAN Megane")
+                        putExtra(android.content.Intent.EXTRA_TEXT, st.riepilogo.testo())
+                    }
+                    startActivity(android.content.Intent.createChooser(i, "Condividi registrazione CAN"))
+                }
+            }
+        }
+        ui.post(passo)
     }
 
     /**
