@@ -51,7 +51,7 @@ class StatoVeicolo private constructor(
     val riepilogo = cafe.megane.core.CanRiepilogo()
 
     /** Modalita di lavoro del dongle. PID e CAN sono mutuamente esclusivi. */
-    enum class Modalita { PID, CAN_MONITOR }
+    enum class Modalita { PID, CAN_MONITOR, LETTURA_ECU }
     @Volatile var modalita: Modalita = Modalita.PID
 
     /** Quanti frame il monitor ha passato al correlatore (per mostrare che e vivo). */

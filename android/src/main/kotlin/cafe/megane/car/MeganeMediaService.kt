@@ -122,6 +122,7 @@ class MeganeMediaService : MediaBrowserService() {
                 val pallino = when { st?.motoreAcceso == true -> "🟢"; st?.quadroAcceso == true -> "🟡"; else -> "⚪" }
                 out += cartella(CRUSCOTTO, "$pallino Cruscotto", griglia = true)
                 out += cartella(GT, "GT", griglia = true)
+                out += cartella(ECU, "Centraline", griglia = false)
                 out += cartella(CODICI, "Codici guasto", griglia = false)
             }
             GT -> {
@@ -142,6 +143,26 @@ class MeganeMediaService : MediaBrowserService() {
                     val v = st.valore(def.pid)
                     out += voce(def.pid, def.traduzione, sottotitolo(st, def.pid, v, def.unita),
                         GaugeProvider.uriParametro(def.pid, v, st.picco(def.pid), st.massimo(def.pid)))
+                }
+            }
+            ECU -> {
+                val r = ScansioneEcu.risultato(applicationContext)
+                if (r == null || r.centraline.isEmpty()) {
+                    out += voce("noecu", if (r == null) "Nessuna lettura" else "Nessuna centralina ha risposto",
+                        "Fai la lettura dall'app Megane sul telefono, a macchina ferma")
+                } else {
+                    out += voce("ecu_info", "Lettura del ${r.quando}", "${r.centraline.size} centraline (sola lettura)")
+                    r.centraline.forEach { c ->
+                        val sw = c.ident["F195"] ?: c.ident["F194"] ?: ""
+                        val guasti = when { c.dtc == null -> "guasti non letti"; c.dtc!!.isEmpty() -> "nessun guasto"
+                            else -> "${c.dtc!!.size} guasti: " + c.dtc!!.take(4).joinToString(" ") { it.codice } }
+                        out += voce("ecu_%03X".format(c.richiesta), c.nome() + "  (%03X)".format(c.richiesta),
+                            listOf(c.ident["F187"], sw.takeIf { it.isNotEmpty() }, guasti).filterNotNull().joinToString("  ·  "))
+                        c.dtc?.forEach { d ->
+                            out += voce("dtc_%03X_%s".format(c.richiesta, d.codice), "${d.codice}  (${d.statoTesto()})",
+                                DtcItaliano.spiega(d.codice))
+                        }
+                    }
                 }
             }
             PISTA_MOD -> {
@@ -239,6 +260,7 @@ class MeganeMediaService : MediaBrowserService() {
         private const val CODICI = "codici"
         private const val GT = "gt"
         private const val PISTA_MOD = "pistamod"
+        private const val ECU = "ecu"
         private const val P_MAPPA = "p_mappa"
         private const val P_AVVIA = "p_avvia"
         private const val P_TRAG = "p_trag"

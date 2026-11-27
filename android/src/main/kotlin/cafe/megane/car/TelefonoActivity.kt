@@ -34,12 +34,15 @@ class TelefonoActivity : ComponentActivity() {
     private lateinit var aggiorna: Button
     private lateinit var registra: Button
     private lateinit var serbTxt: TextView
+    private lateinit var ecuTxt: TextView
+    private lateinit var ecuBtn: Button
     private var registrando = false
     private val ui = Handler(Looper.getMainLooper())
     private val aggiornaStato = object : Runnable {
         override fun run() {
             statoConn.text = Connessione.testo
             if (::serbTxt.isInitialized) serbTxt.text = testoSerbatoio()
+            if (::ecuBtn.isInitialized) aggiornaEcu()
             statoConn.setTextColor(if (Connessione.collegato) 0xFF2E7D32.toInt() else 0xFFB26A00.toInt())
             aggiorna.text = Aggiornamenti.stato.ifEmpty { "Controlla aggiornamenti" }
                 .let { if (it.startsWith("Disponibile")) "AGGIORNA: $it" else it }
@@ -79,6 +82,31 @@ class TelefonoActivity : ComponentActivity() {
             isAllCaps = false
             text = "Registra bus CAN 60 s (cerca pressione gomme, benzina)"
             setOnClickListener { registraCan() }
+        }
+        // ---- altre centraline: SOLA LETTURA (identificazione e codici guasto) ----
+        ecuBtn = Button(this).apply {
+            isAllCaps = false
+            text = "Leggi le altre centraline (sola lettura, circa 1 minuto)"
+            setOnClickListener { avviaLetturaEcu() }
+        }
+        ecuTxt = TextView(this).apply {
+            setPadding(32, 16, 32, 16); textSize = 13f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        val ecuCondividi = Button(this).apply {
+            isAllCaps = false
+            text = "Condividi la lettura delle centraline"
+            setOnClickListener {
+                val r = ScansioneEcu.risultato(this@TelefonoActivity)
+                if (r == null) android.widget.Toast.makeText(context, "Nessuna lettura ancora", android.widget.Toast.LENGTH_SHORT).show()
+                else startActivity(android.content.Intent.createChooser(
+                    android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Centraline Megane")
+                        putExtra(android.content.Intent.EXTRA_TEXT, ScansioneEcu.testo(r))
+                    }, "Condividi centraline"))
+            }
         }
         // ---- benzina stimata: tu dici i litri, l'app sottrae il consumo e si calibra ai pieni ----
         serbTxt = TextView(this).apply { setPadding(32, 16, 32, 0); textSize = 15f }
@@ -136,6 +164,9 @@ class TelefonoActivity : ComponentActivity() {
             addView(ferma)
             addView(posizione)
             addView(registra)
+            addView(ecuBtn)
+            addView(ecuTxt)
+            addView(ecuCondividi)
             addView(serbTxt)
             addView(serbIn)
             addView(serbBottoni)
@@ -264,6 +295,35 @@ class TelefonoActivity : ComponentActivity() {
 
     private fun avviaServizio() {
         runCatching { PollingService.avvia(this) }
+    }
+
+    /** Solo a macchina ferma e quadro acceso: la lettura occupa il bus diagnostico per circa un minuto. */
+    private fun avviaLetturaEcu() {
+        val st = StatoApp.stato(this) ?: return
+        val v = st.valore("0D")
+        when {
+            ScansioneEcu.inCorso -> return
+            !st.quadroAcceso -> android.widget.Toast.makeText(this,
+                "Quadro acceso e adattatore collegato, poi riprova", android.widget.Toast.LENGTH_LONG).show()
+            v != null && v >= 1.0 -> android.widget.Toast.makeText(this,
+                "Fermati: la lettura si fa solo a macchina ferma", android.widget.Toast.LENGTH_LONG).show()
+            else -> {
+                ScansioneEcu.progresso = "In attesa dell'adattatore..."
+                st.modalita = StatoVeicolo.Modalita.LETTURA_ECU
+            }
+        }
+    }
+
+    private fun aggiornaEcu() {
+        val r = ScansioneEcu.risultato(this)
+        ecuBtn.isEnabled = !ScansioneEcu.inCorso
+        ecuBtn.text = if (ScansioneEcu.inCorso) ScansioneEcu.progresso
+        else "Leggi le altre centraline (sola lettura, circa 1 minuto)"
+        ecuTxt.text = when {
+            ScansioneEcu.inCorso -> ""
+            r == null -> "Nessuna lettura. A macchina ferma e quadro acceso tocca il pulsante qui sopra."
+            else -> ScansioneEcu.testo(r)
+        }
     }
 
     private fun testoSerbatoio(): String {

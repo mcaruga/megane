@@ -101,6 +101,14 @@ class PollingService : LifecycleService() {
 
             // Biforcazione: o leggo i PID, o ascolto il bus. Mai insieme
             // sullo stesso ELM327: ATMA esclude le richieste PID.
+            // lettura (solo lettura) delle altre centraline: una volta, poi si riparte puliti
+            if (stato.modalita == StatoVeicolo.Modalita.LETTURA_ECU) {
+                leggiAltreCentraline(connessione)
+                stato.modalita = StatoVeicolo.Modalita.PID
+                elm = null; trasporto.chiudi()     // dopo ATSH/ATCRA riparte da zero con ATZ
+                continue
+            }
+
             if (stato.modalita == StatoVeicolo.Modalita.CAN_MONITOR) {
                 ascoltaCan(stato)          // bloccante finche l'utente non esce dal monitor
                 continue
@@ -136,6 +144,26 @@ class PollingService : LifecycleService() {
                 delay(INTERVALLO_LETTURA)
             }
         }
+    }
+
+    /** Scansione delle centraline: passa solo dalla lista bianca di sola lettura (vedi Centraline.kt). */
+    private fun leggiAltreCentraline(e: Elm327) {
+        ScansioneEcu.inCorso = true
+        ScansioneEcu.progresso = "Avvio..."
+        runCatching { Diagnosi.evento(applicationContext, "ECU: lettura altre centraline (sola lettura) avviata") }
+        val r = runCatching {
+            cafe.megane.core.LetturaCentraline(e, { ScansioneEcu.progresso = it }).scansiona()
+        }
+        r.onSuccess { lista ->
+            val quando = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.ITALY).format(java.util.Date())
+            ScansioneEcu.salva(applicationContext, cafe.megane.core.Scansione(quando, lista))
+            runCatching { Diagnosi.evento(applicationContext, "ECU: trovate ${lista.size} centraline: " +
+                lista.joinToString { "%03X".format(it.richiesta) }) }
+        }.onFailure {
+            ScansioneEcu.progresso = "Errore: ${it.message}"
+            runCatching { Diagnosi.evento(applicationContext, "ECU: lettura fallita: ${it.message}") }
+        }
+        ScansioneEcu.inCorso = false
     }
 
     /**
