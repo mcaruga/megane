@@ -102,6 +102,15 @@ class Elm327(
         return out
     }
 
+    /**
+     * Unico punto d'ingresso per la lettura delle ALTRE centraline: ogni comando passa dalla
+     * [ListaBianca]. Un comando di scrittura, sessione o cancellazione viene rifiutato qui.
+     */
+    fun comandoLettura(cmd: String, attesaMs: Long = 1_500): String {
+        require(ListaBianca.ammesso(cmd)) { "Comando non ammesso (solo lettura): $cmd" }
+        return send(cmd.trim().uppercase().replace(" ", ""), attesaMs)
+    }
+
     /** Codici guasto attivi (mode 03) e pendenti (mode 07). */
     fun readDtc(): List<String> = buildList {
         addAll(parseDtc(send("03")))
