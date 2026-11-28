@@ -51,7 +51,11 @@ class MeganeMediaService : MediaBrowserService() {
                     notifyChildrenChanged(CRUSCOTTO)
                     notifyChildrenChanged(GT)
                     notifyChildrenChanged(PISTA_MOD)
+                    notifyChildrenChanged(MANUT)
                     notifyChildrenChanged(CODICI)
+                    notifyChildrenChanged(ECU)
+                    notifyChildrenChanged(PIDSUP)
+                    notifyChildrenChanged(CANRIS)
                     aggiornaGrande()
                     h.postDelayed(giro, 2000)
                 }
@@ -84,6 +88,7 @@ class MeganeMediaService : MediaBrowserService() {
                             scelto = P_MAPPA
                         }
                         P_AZZERA -> { PistaStato.sessione.azzera(); PistaStato.avviso("Sessione azzerata"); scelto = P_MAPPA }
+                        M_ECU, M_CAN -> avviaManutenzione(mediaId)
                     }
                     aggiornaGrande()
                 }
@@ -122,8 +127,7 @@ class MeganeMediaService : MediaBrowserService() {
                 val pallino = when { st?.motoreAcceso == true -> "🟢"; st?.quadroAcceso == true -> "🟡"; else -> "⚪" }
                 out += cartella(CRUSCOTTO, "$pallino Cruscotto", griglia = true)
                 out += cartella(GT, "GT", griglia = true)
-                out += cartella(ECU, "Centraline", griglia = false)
-                out += cartella(CODICI, "Codici guasto", griglia = false)
+                out += cartella(MANUT, "Manutenzione", griglia = false)
             }
             GT -> {
                 st?.gtRichiesto()
@@ -143,6 +147,38 @@ class MeganeMediaService : MediaBrowserService() {
                     val v = st.valore(def.pid)
                     out += voce(def.pid, def.traduzione, sottotitolo(st, def.pid, v, def.unita),
                         GaugeProvider.uriParametro(def.pid, v, st.picco(def.pid), st.massimo(def.pid)))
+                }
+            }
+            // una sola scheda in alto per tutto cio che e diagnosi e ricerca: cosi il cruscotto si legge tutto
+            MANUT -> {
+                out += voce("m_stato", "Collegamento", Connessione.testo)
+                out += cartella(CODICI, "Codici guasto del motore", griglia = false)
+                out += cartella(ECU, "Altre centraline (identificazione e guasti)", griglia = false)
+                out += voce(M_ECU, "Leggi le altre centraline ora",
+                    if (ScansioneEcu.inCorso) ScansioneEcu.progresso else "Sola lettura, circa 1 minuto. A macchina ferma, quadro acceso")
+                out += cartella(PIDSUP, "Dati che l'auto sa dare (PID)", griglia = false)
+                out += cartella(CANRIS, "Registrazione del bus CAN", griglia = false)
+                out += voce(M_CAN, "Registra il bus CAN 60 s", RegistrazioneCan.stato(st))
+            }
+            PIDSUP -> {
+                val sup = st?.supportati
+                if (sup == null) out += voce("nopid", "Non ancora letti", "Si leggono a quadro acceso, dopo il collegamento")
+                else {
+                    out += voce("pid_n", "${sup.size} dati supportati", "In grassetto sul cruscotto quelli gia usati")
+                    sup.sorted().forEach { pid ->
+                        val def = st.catalogo.pids.firstOrNull { it.pid == pid }
+                        out += voce("pid_$pid", "$pid  " + (def?.traduzione ?: "non ancora usato dall'app"),
+                            def?.originale ?: "")
+                    }
+                }
+            }
+            CANRIS -> {
+                val r = st?.riepilogo
+                if (r == null || r.totale() == 0) out += voce("nocan", "Nessuna registrazione",
+                    "Tocca 'Registra il bus CAN 60 s' in Manutenzione, a macchina ferma")
+                else {
+                    out += voce("can_n", RegistrazioneCan.stato(st), "Il testo completo si condivide dall'app sul telefono")
+                    r.righe(20).forEachIndexed { i, (t, d) -> out += voce("can_$i", t, d) }
                 }
             }
             ECU -> {
@@ -205,6 +241,26 @@ class MeganeMediaService : MediaBrowserService() {
         else "%.1f di %.0f L  (%.0f%%)".format(v, s.capacita, (s.frazione() ?: 0.0) * 100)
     }
 
+    private var messaggioManut = ""
+
+    /** Letture di ricerca dal display: solo a macchina ferma, quadro acceso, adattatore collegato. */
+    private fun avviaManutenzione(id: String) {
+        val st = StatoApp.stato(applicationContext)
+        messaggioManut = when {
+            st == null -> "App non pronta"
+            !st.quadroAcceso -> "Serve il quadro acceso e il vLinker collegato"
+            (st.valore("0D") ?: 0.0) >= 1.0 -> "Fermati: si fa solo a macchina ferma"
+            st.modalita != StatoVeicolo.Modalita.PID || ScansioneEcu.inCorso || RegistrazioneCan.inCorso ->
+                "Un'altra lettura e in corso"
+            id == M_ECU -> {
+                ScansioneEcu.progresso = "In attesa dell'adattatore..."
+                st.modalita = StatoVeicolo.Modalita.LETTURA_ECU
+                "Lettura delle centraline avviata (sola lettura)"
+            }
+            else -> { RegistrazioneCan.avvia(applicationContext, st); "Registrazione CAN avviata: 60 s" }
+        }
+    }
+
     private fun testoValore(v: Double?, unita: String) = v?.let { GaugeProvider.formatta(it, unita) } ?: "--"
 
     /** Riga toccata: valore in grande nella schermata "in riproduzione". */
@@ -213,7 +269,13 @@ class MeganeMediaService : MediaBrowserService() {
         val st = StatoApp.stato(applicationContext)
         val def = st?.catalogo?.pids?.firstOrNull { it.pid == id }
         val meta = MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_ALBUM, "Megane")
-        if (id == P_MAPPA) {
+        if (id == M_ECU || id == M_CAN) {
+            meta.putString(MediaMetadata.METADATA_KEY_TITLE, "Manutenzione")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST,
+                    if (ScansioneEcu.inCorso) ScansioneEcu.progresso
+                    else if (RegistrazioneCan.inCorso) RegistrazioneCan.stato(st)
+                    else messaggioManut.ifEmpty { "Pronto" })
+        } else if (id == P_MAPPA) {
             val uri = GaugeProvider.uriCircuito().toString()
             val giri = PistaStato.sessione.giri
             meta.putString(MediaMetadata.METADATA_KEY_TITLE, "Pista")
@@ -261,6 +323,11 @@ class MeganeMediaService : MediaBrowserService() {
         private const val GT = "gt"
         private const val PISTA_MOD = "pistamod"
         private const val ECU = "ecu"
+        private const val MANUT = "manut"
+        private const val PIDSUP = "pidsup"
+        private const val CANRIS = "canris"
+        private const val M_ECU = "m_ecu"
+        private const val M_CAN = "m_can"
         private const val P_MAPPA = "p_mappa"
         private const val P_AVVIA = "p_avvia"
         private const val P_TRAG = "p_trag"

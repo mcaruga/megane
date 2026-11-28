@@ -109,6 +109,21 @@ class TelefonoActivity : ComponentActivity() {
             }
         }
         // ---- benzina stimata: tu dici i litri, l'app sottrae il consumo e si calibra ai pieni ----
+        val canCondividi = Button(this).apply {
+            isAllCaps = false
+            text = "Condividi l'ultima registrazione CAN"
+            setOnClickListener {
+                val st = StatoApp.stato(this@TelefonoActivity)
+                if (st == null || st.riepilogo.totale() == 0)
+                    android.widget.Toast.makeText(context, "Nessuna registrazione ancora", android.widget.Toast.LENGTH_SHORT).show()
+                else startActivity(android.content.Intent.createChooser(
+                    android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Registrazione CAN Megane")
+                        putExtra(android.content.Intent.EXTRA_TEXT, st.riepilogo.testo())
+                    }, "Condividi registrazione CAN"))
+            }
+        }
         serbTxt = TextView(this).apply { setPadding(32, 16, 32, 0); textSize = 15f }
         val serbIn = android.widget.EditText(this).apply {
             hint = "litri (es. 38,5)"
@@ -164,6 +179,7 @@ class TelefonoActivity : ComponentActivity() {
             addView(ferma)
             addView(posizione)
             addView(registra)
+            addView(canCondividi)
             addView(ecuBtn)
             addView(ecuTxt)
             addView(ecuCondividi)
@@ -341,7 +357,7 @@ class TelefonoActivity : ComponentActivity() {
      * Fai l'ascolto con il quadro acceso, e confronta con quello che dice il quadro strumenti.
      */
     private fun registraCan() {
-        if (registrando) return
+        if (registrando || RegistrazioneCan.inCorso) return
         val st = StatoApp.stato(this) ?: return
         registrando = true
         st.riepilogo.azzera()

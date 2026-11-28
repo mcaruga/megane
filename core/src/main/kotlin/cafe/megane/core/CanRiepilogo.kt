@@ -41,6 +41,18 @@ class CanRiepilogo {
     @Synchronized
     fun quantiId(): Int = voci.size
 
+    /** Prime righe (ID piu attivi) per mostrarle sul display: [titolo, dettaglio]. */
+    @Synchronized
+    fun righe(max: Int = 20): List<Pair<String, String>> {
+        val secondi = ((fine - inizio) / 1000.0).coerceAtLeast(0.001)
+        return voci.entries.sortedByDescending { it.value.n }.take(max).map { (id, v) ->
+            val variabili = (0 until minOf(8, v.ultimoDato.size)).filter { v.valoriPerByte[it].size > 1 }
+            "ID %03X  (%d messaggi, %.1f/s)".format(id, v.n, v.n / secondi) to
+                (v.ultimoDato.joinToString(" ") { "%02X".format(it) } +
+                    if (variabili.isEmpty()) "  ·  nessun byte cambia" else "  ·  cambiano i byte " + variabili.joinToString(","))
+        }
+    }
+
     /** Testo da condividere. Piu frame e piu dati diversi = piu utile. */
     @Synchronized
     fun testo(): String = buildString {
