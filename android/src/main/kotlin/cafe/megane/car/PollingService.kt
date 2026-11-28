@@ -28,6 +28,7 @@ class PollingService : LifecycleService() {
 
     private lateinit var trasporto: TrasportoBluetooth
     private var elm: Elm327? = null
+    private var ultimoLogCan = 0L
     private var monitorAttivo: cafe.megane.core.ElmMonitor? = null
     private var fallimenti = 0
 
@@ -183,6 +184,15 @@ class PollingService : LifecycleService() {
                 if (stato.modalita != StatoVeicolo.Modalita.CAN_MONITOR) monitor.stop()
             }
         }.onFailure { elm = null; trasporto.chiudi() }
+        // perche e finito l'ascolto: serve a capire se il bus e davvero muto o se il monitor non funziona
+        val ora = System.currentTimeMillis()
+        if (ora - ultimoLogCan > 15_000) {
+            ultimoLogCan = ora
+            runCatching {
+                Diagnosi.evento(applicationContext, "CAN: monitor chiuso: ${monitor.motivoUscita.ifEmpty { "-" }}; " +
+                    "byte ricevuti ${monitor.byteRicevuti}; righe non lette: ${monitor.righeScartate.joinToString(" | ").ifEmpty { "-" }}")
+            }
+        }
         monitorAttivo = null
     }
 
@@ -213,6 +223,10 @@ class PollingService : LifecycleService() {
                     "Riprovo tra 10 s.", collegato = true)
             trasporto.chiudi()
             return null
+        }
+        runCatching {
+            // protocollo scelto dall'adattatore (es. "ISO 15765-4 (CAN 11/500)"): serve a capire il bus
+            Diagnosi.evento(applicationContext, "ELM: protocollo ${e.comandoLettura("ATDP", 800).replace("\n", " ").trim()}")
         }
         return e.also { elm = it }
     }

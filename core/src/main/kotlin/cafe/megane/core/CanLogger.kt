@@ -48,7 +48,13 @@ class ElmMonitor(
 
     @Volatile private var attivo = false
 
+    /** Perche l'ascolto e finito, quanti byte sono arrivati e le righe non lette (BUFFER FULL, CAN ERROR...). */
+    @Volatile var motivoUscita = ""; private set
+    @Volatile var byteRicevuti = 0L; private set
+    val righeScartate: MutableList<String> = java.util.concurrent.CopyOnWriteArrayList()
+
     override fun ascolta(onFrame: (CanFrame) -> Unit) {
+        motivoUscita = ""; byteRicevuti = 0; righeScartate.clear()
         // ATMA = Monitor All. Mette l'ELM in sola ricezione: NON invia nulla sul bus.
         invia("ATH1")   // header on: servono gli ID
         invia("ATS0")
@@ -60,15 +66,23 @@ class ElmMonitor(
         while (attivo) {
             if (input.available() > 0) {
                 ultimoByte = System.currentTimeMillis()
+                byteRicevuti++
                 val c = input.read().toChar()
                 if (c == '\r' || c == '\n') {
-                    parse(riga.toString().trim())?.let(onFrame)
+                    val t = riga.toString().trim()
+                    val f = parse(t)
+                    if (f != null) onFrame(f)
+                    else if (t.isNotEmpty() && righeScartate.size < 8) righeScartate.add(t.take(40))
                     riga.clear()
                 } else if (c == '>') {
+                    motivoUscita = "prompt '>' dall'adattatore (ATMA non partito o interrotto)"
                     break
                 } else riga.append(c)
             } else {
-                if (System.currentTimeMillis() - ultimoByte > idleTimeoutMs) break
+                if (System.currentTimeMillis() - ultimoByte > idleTimeoutMs) {
+                    motivoUscita = "nessun byte per ${idleTimeoutMs / 1000} s: bus silenzioso"
+                    break
+                }
                 Thread.sleep(2)
             }
         }
